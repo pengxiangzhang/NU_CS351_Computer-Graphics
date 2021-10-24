@@ -1,0 +1,31 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+	<meta charset="utf-8" />
+	<title>Project A By Pengxiang Zhang</title>
+</head>
+
+<body onload="main()">
+		<p>Spin Rate: <input type="number" id="spin" onchange="upDateSpinRate(value)"></input></p>
+	<p>Move Rate: <a id="move"></a></p>
+	<canvas id="webgl" width="700" height="700">
+		Please use a browser that supports "canvas"
+	</canvas>
+	<br>
+	<p>User’s Guide:<br>
+		The rate of the water coming out from the pipe (Spin of the 3D object) can be controlled using the keyboard with keys “W” and “S” or “↑” and “↓”, It can also be controlled using the input on the top of the webpage. <br>
+		The rate of the water flow (moving speed of the 3D object) can be controlled using the keyboard with keys “A” and “D” or “←” and “→”. You may see the speed of the water flow on the top of the webpage. <br>
+		You may also drag and spin using the mouse on the webpage to rotate the 3D object.
+	</p>
+
+
+	<div id=EditBoxOut></div>
+	<script src="./lib/webgl-utils.js"></script>
+	<script src="./lib/webgl-debug.js"></script>
+	<script src="./lib/cuon-utils.js"></script>
+	<script src="./lib/cuon-matrix-quat03.js"></script>
+	<script src="ZhangPengxiang_ProjA.js"></script>
+</body>
+
+</html>

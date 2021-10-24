@@ -1,4 +1,5 @@
 // project_a.js By Pengxiang Zhang
+//
 // Credit: 
 // This project used the starter code provide from the textbook
 // Chapter 5: ColoredTriangle.js (c) 2012 matsuda  AND
@@ -41,9 +42,11 @@ var g_modelMatLoc;
 var g_isRun = true;
 var g_lastMS = Date.now();
 var g_angle01 = 0;
-var g_angle01Rate = 1000;
+var g_angle01Rate = 100;
+var g_angle02 = 0;
+var g_angle02Rate = 1000;
 var g_move = 0;
-var g_moveRate = 0.05;
+var g_moveRate = 0.01;
 //------------For mouse click-and-drag------------
 var g_isDrag = false;
 var g_xMclik = 0.0;
@@ -56,7 +59,8 @@ var g_xKeyTo = 0.0;
 var g_yKeyTo = 0.0;
 var g_xKeySpin = 0.0;
 var g_yKeySpin = 0.0;
-
+document.getElementById("move").textContent = g_moveRate; 
+document.getElementById("spin").value = g_angle01Rate; 
 
 function main() {
     gl = getWebGLContext(g_canvas);
@@ -321,6 +325,7 @@ function initVertexBuffer() {
     // value we will actually use?
     gl.enableVertexAttribArray(a_Position);
     var a_Color = gl.getAttribLocation(gl.program, 'a_Color');
+
     if (a_Color < 0) {
         console.log('Failed to get the storage location of a_Color');
         return -1;
@@ -345,7 +350,6 @@ function DrawTap() {
     gl.uniformMatrix4fv(g_modelMatLoc, false, g_modelMatrix.elements);
     gl.drawArrays(gl.TRIANGLES, 0, 36);
 
-    // pushMatrix(g_modelMatrix);
     g_modelMatrix.translate(0.5, 2.0, 0.0);
     g_modelMatrix.scale(0.6, 0.6, 1);
     g_modelMatrix.rotate(-90, 0, 0)
@@ -355,13 +359,27 @@ function DrawTap() {
 
 }
 
-function DrawWater(x, y, z) {
+function DrawOutlet(x, y, z) {
     g_modelMatrix = popMatrix();
     pushMatrix(g_modelMatrix);
     g_modelMatrix.translate(x, y, z);
     g_modelMatrix.scale(0.2, 0.2, 0.2);
     g_modelMatrix.rotate(g_angle01, 0, 0, 1);
     gl.uniformMatrix4fv(g_modelMatLoc, false, g_modelMatrix.elements);
+    gl.drawArrays(gl.TRIANGLES, 36, 48);
+    g_modelMatrix.translate(2,1,1);
+    g_modelMatrix.rotate(g_angle02, 0, 0, 1);
+    gl.uniformMatrix4fv(g_modelMatLoc, false, g_modelMatrix.elements);
+    gl.drawArrays(gl.TRIANGLES, 36, 48);
+}
+
+function DrawWater(x, y, z) {
+    g_modelMatrix = popMatrix();
+    pushMatrix(g_modelMatrix);
+    g_modelMatrix.translate(x, y, z);
+    g_modelMatrix.scale(0.2, 0.2, 0.2);
+    g_modelMatrix.rotate(g_angle01, 0, 0, 1);
+    gl.uniformMatrix4fv(g_modelMatLoc, false, g_modelMatrix.elements);  
     gl.drawArrays(gl.TRIANGLES, 36, 48);
 }
 
@@ -374,6 +392,7 @@ function DrawControl(x,y,z,control) {
     g_modelMatrix.rotate(control, 0, 0, 1);
     gl.uniformMatrix4fv(g_modelMatLoc, false, g_modelMatrix.elements);
     gl.drawArrays(gl.TRIANGLES, 84, 42);
+    
 }
 
 function drawAll() {
@@ -381,9 +400,11 @@ function drawAll() {
     clrColr = new Float32Array(4);
     clrColr = gl.getParameter(gl.COLOR_CLEAR_VALUE);
     DrawTap()
-    DrawWater(0.5 + g_move, 1.8, 0.5)
+    DrawOutlet(0.5, 1.5, 0.5)
+    DrawOutlet(0.5, 2, 0.5)
     DrawWater(1 + g_move, 1.8, 0.5)
     DrawWater(1.5 + g_move, 1.8, 0.5)
+    DrawWater(2 + g_move, 1.8, 0.5)
     DrawControl(0.5,0.5,0.5,g_xKeySpin)
     DrawControl(0.5,0,0.5,g_yKeySpin)
 }
@@ -400,6 +421,10 @@ function animate() {
     if (g_angle01 > 180.0) g_angle01 = g_angle01 - 360.0;
     if (g_angle01 < -180.0) g_angle01 = g_angle01 + 360.0;
 
+    g_angle02 = g_angle02 + (g_angle02Rate * elapsed) / 1000.0;
+    if (g_angle02 > 180.0) g_angle02 = g_angle02 - 360.0;
+    if (g_angle02 < -180.0) g_angle02 = g_angle02 + 360.0;
+
     if (up == 0) {
         if (g_move < 0) up = 1
         if (g_move > 5) up = 0
@@ -411,15 +436,8 @@ function animate() {
     }
 }
 
-function myMouseDown(ev) {
-    var rect = ev.target.getBoundingClientRect();
-    var xp = ev.clientX - rect.left;
-    var yp = g_canvas.height - (ev.clientY - rect.top);
-    var x = (xp - g_canvas.width / 2) / (g_canvas.width / 2);
-    var y = (yp - g_canvas.height / 2) / (g_canvas.height / 2);
+function myMouseDown() {
     g_isDrag = true;
-    g_xDragTo = x;
-    g_yDragTo = y;
 };
 
 function myMouseMove(ev) {
@@ -435,43 +453,52 @@ function myMouseMove(ev) {
     g_yDragTo = y;
 };
 
-function myMouseUp(ev) {
-    var rect = ev.target.getBoundingClientRect();
-    var xp = ev.clientX - rect.left;
-    var yp = g_canvas.height - (ev.clientY - rect.top);
-
-    var x = (xp - g_canvas.width / 2) / (g_canvas.width / 2);
-    var y = (yp - g_canvas.height / 2) / (g_canvas.height / 2);
+function myMouseUp() {
     g_isDrag = false;
-    g_xDragTo += (x - g_xDragTo);
-    g_yDragTo += (y - g_yDragTo);
 };
 
 function myKeyDown(kev) {
     switch (kev.code) {
         case "KeyA":
         case "ArrowLeft":
-            if (g_moveRate <= 0) {
-                alert("Already stopped")
-                break;
+            if (g_moveRate > 0) {
+                g_moveRate -= 0.01;
+                g_yKeySpin += 5;
+                document.getElementById("move").textContent = g_moveRate; 
             }
-            g_moveRate -= 0.01;
-            g_yKeySpin += 5;
+            else{
+                g_moveRate = 0;
+                alert("Already Stopped")
+                document.getElementById("move").textContent = g_moveRate; 
+            }
+
             break;
         case "KeyD":
         case "ArrowRight":
             g_moveRate += 0.01;
             g_yKeySpin -= 5;
+            document.getElementById("move").textContent = g_moveRate; 
             break;
         case "KeyS":
         case "ArrowDown":
             g_angle01Rate -= 50;
             g_xKeySpin -=1;
+            document.getElementById("spin").value = g_angle01Rate; 
             break;
         case "KeyW":
         case "ArrowUp":
             g_angle01Rate += 50;
             g_xKeySpin += 1;
+            document.getElementById("spin").value = g_angle01Rate; 
             break;
     }
+
+}
+function upDateSpinRate(value) {
+    g_angle01Rate = value
+    g_xKeySpin = value/50
+}
+
+function changeColor(value) {
+    console.log(value)
 }
