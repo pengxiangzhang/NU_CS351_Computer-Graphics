@@ -20,9 +20,12 @@ var VSHADER_SOURCE =
   'uniform mat4 u_ModelMatrix;\n' +
   'attribute vec4 a_Position;\n' +
   'attribute vec4 a_Color;\n' +
+  'uniform vec2 u_shiver;\n' +
   'varying vec4 v_Color;\n' +
   'void main() {\n' +
   '  gl_Position = u_ModelMatrix * a_Position;\n' +
+  '  gl_Position.x += u_shiver.x * sin( 0.2 * gl_Position.y + u_shiver.y);\n' +
+  '  gl_Position.y += u_shiver.x * sin( 0.2 * gl_Position.y + u_shiver.y);\n' +
   '  gl_PointSize = 10.0;\n' +
   '  v_Color = a_Color;\n' +
   '}\n';
@@ -43,7 +46,8 @@ var floatsPerVertex = 7;	// # of Float32Array elements used for each vertex
 													// (x,y,z,w)position + (r,g,b)color
 													// Later, see if you can add:
 													// (x,y,z) surface normal + (tx,ty) texture addr.
-
+var u_shiver_x = 0
+var u_shiver_y = 0
 function main() {
 //==============================================================================
   // Retrieve <canvas> element
@@ -94,6 +98,9 @@ function main() {
 
   // Get handle to graphics system's storage location of u_ModelMatrix
   var u_ModelMatrix = gl.getUniformLocation(gl.program, 'u_ModelMatrix');
+  var u_shiver = gl.getUniformLocation(gl.program, 'u_shiver');
+  gl.uniform2f(u_shiver,u_shiver_x,u_shiver_y)
+  
   if (!u_ModelMatrix) { 
     console.log('Failed to get the storage location of u_ModelMatrix');
     return;
@@ -108,6 +115,7 @@ function main() {
   // Start drawing: create 'tick' variable whose value is this function:
   var tick = function() {
     currentAngle = animate(currentAngle);  // Update the rotation angle
+	animate_y(gl,u_shiver)
     drawAll(gl, n, currentAngle, modelMatrix, u_ModelMatrix);   // Draw shapes
     // report current angle on console
     //console.log('currentAngle=',currentAngle);
@@ -715,6 +723,11 @@ function animate(angle) {
   
   var newAngle = angle + (ANGLE_STEP * elapsed) / 1000.0;
   return newAngle %= 360;
+}
+
+function animate_y(gl, u_shiver){ 
+	u_shiver_y = u_shiver_y+0.01%(Math.PI*2)
+	gl.uniform2f(u_shiver,0.75,u_shiver_y)
 }
 
 //==================HTML Button Callbacks
