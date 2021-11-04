@@ -82,7 +82,7 @@ function main() {
 //       when you apply any of the 3D camera-lens transforms: 
 //      (e.g. Matrix4 member functions 'perspective(), frustum(), ortho() ...)
 //======================REVERSED-DEPTH Correction===============================
-
+/*
   //  b) reverse the usage of the depth-buffer's stored values, like this:
   gl.enable(gl.DEPTH_TEST); // enabled by default, but let's be SURE.
   gl.clearDepth(0.0);       // each time we 'clear' our depth buffer, set all
@@ -90,6 +90,7 @@ function main() {
   gl.depthFunc(gl.GREATER); // draw a pixel only if its depth value is GREATER
                             // than the depth buffer's stored value.
                             // (gl.LESS is DEFAULT; reverse it!)
+*/
 //=====================================================================
 
   // Get handle to graphics system's storage location of u_ModelMatrix
@@ -602,6 +603,7 @@ function drawAll(gl, n, currentAngle, modelMatrix, u_ModelMatrix) {
                         		??);  // camera z-far distance (always positive; frustum ends at z = -zfar)
 
 */
+modelMatrix.perspective(42, 1.0, 1.0, 1000.0)
 
 /*
 //  STEP 1:
@@ -613,6 +615,7 @@ function drawAll(gl, n, currentAngle, modelMatrix, u_ModelMatrix) {
                       ??, ??, ??,	// look-at point 
                       ??, ??, ??);	// View UP vector.
 */
+modelMatrix.lookAt(5,5,3,-1,-2,-.5,0,0,1)
 
 /*
 // STEP 3: 
