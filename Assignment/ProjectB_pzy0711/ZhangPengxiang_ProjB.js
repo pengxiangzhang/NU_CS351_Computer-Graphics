@@ -40,7 +40,8 @@ var FSHADER_SOURCE =
 // Global Variables
 var ANGLE_STEP = 45.0;		// Rotation angle rate (degrees/second)
 var floatsPerVertex = 7;	// # of Float32Array elements used for each vertex
-var canvas
+var g_canvas = document.getElementById('webgl');
+var quatMatrix = new Matrix4();
 // (x,y,z,w)position + (r,g,b)color
 // Later, see if you can add:
 // (x,y,z) surface normal + (tx,ty) texture addr.
@@ -51,6 +52,10 @@ var g_yMclik = 0.0;
 var g_xDragTo = 0.01845;
 var g_yDragTo = -2.4170;
 var g_digits = 5;
+var g_xMdragTot = 0.0;
+var g_yMdragTot = 0.0;
+var qNew = new Quaternion(0, 0, 0, 1); // most-recent mouse drag's rotation
+var qTot = new Quaternion(0, 0, 0, 1);	// 'current' orientation (made from qNew)
 //------------For keyboard moving------------
 var g_xKeyTo = 0.0;
 var g_yKeyTo = 0.0;
@@ -60,31 +65,28 @@ var g_yKeySpin = 0.0;
 var g_isRun = true;
 var g_lastMS = Date.now();
 var g_angle01 = 0;
-var g_angle01Rate = 100;
+var g_angle01Rate = 10;
 var g_angle02 = 0;
-var g_angle02Rate = 1000;
+var g_angle02Rate = 100;
 var g_move = 0;
 var g_moveRate = 0.01;
 //------------Camera------------
-
 var g_EyeX = 5, g_EyeY = -29.5, g_EyeZ = 39.5;
 var g_LookAtX = 5, g_LookAtY = -28.5, g_LookatZ = 38.5;
 var theta = 90;
 var g_DisplaceX = (g_LookAtX - g_EyeX) * 0.5;
 var g_DisplaceY = (g_LookAtY - g_EyeY) * 0.5;
 var g_DisplaceZ = (g_LookatZ - g_EyeZ) * 0.5;
+
 function main() {
 	//==============================================================================
 	// Retrieve <canvas> element
-	canvas = document.getElementById('webgl');
-	canvas.width = window.innerWidth * 0.98;
-	canvas.height = window.innerHeight * 0.6;
 	window.addEventListener("keydown", myKeyDown, false);
 	window.addEventListener("mousedown", myMouseDown);
 	window.addEventListener("mousemove", myMouseMove);
 	window.addEventListener("mouseup", myMouseUp);
 	// Get the rendering context for WebGL
-	var gl = getWebGLContext(canvas);
+	var gl = getWebGLContext(g_canvas);
 	if (!gl) {
 		console.log('Failed to get the rendering context for WebGL');
 		return;
@@ -143,14 +145,23 @@ function main() {
 	// Start drawing: create 'tick' variable whose value is this function:
 	var tick = function () {
 		currentAngle = animate(currentAngle);  // Update the rotation angle
-		drawAll(canvas, gl, n, currentAngle, modelMatrix, u_ModelMatrix);   // Draw shapes
+		drawResize(gl, n, currentAngle, modelMatrix, u_ModelMatrix);
+
 		// report current angle on console
 		//console.log('currentAngle=',currentAngle);
-		requestAnimationFrame(tick, canvas);
+		requestAnimationFrame(tick, g_canvas);
 		// Request that the browser re-draw the webpage
 	};
 	tick();							// start (and continue) animation: draw current image
 
+}
+
+function drawResize(gl, n, currentAngle, modelMatrix, u_ModelMatrix) {
+	var xtraMargin = 16;    // keep a margin (otherwise, browser adds scroll-bars)
+	g_canvas.width = innerWidth - xtraMargin;
+	g_canvas.height = (innerHeight * 3 / 4) - xtraMargin;
+	// IMPORTANT!  Need a fresh drawing in the re-sized viewports.
+	drawAll(gl, n, currentAngle, modelMatrix, u_ModelMatrix);   // Draw shapes
 }
 
 function initVertexBuffer(gl) {
@@ -327,8 +338,18 @@ function initVertexBuffer(gl) {
 	]);
 	makeGroundGrid();				// create, fill the gndVerts array
 	makeSphere()					// create, fill the sphVerts array
+	axisVerts = new Float32Array([
+		0.0, 0.0, 0.0, 1.0, 1.0, 0.0, 0.0,
+		1, 0.0, 0.0, 1.0, 1.0, 0.0, 0.0,
+
+		0.0, 0.0, 0.0, 1.0, 0.0, 1.0, 0.0,
+		0.0, 1, 0.0, 1.0, 0.0, 1.0, 0.0,
+
+		0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 1.0,
+		0.0, 0.0, 1, 1.0, 0.0, 0.0, 1.0,
+	]);
 	// how many floats total needed to store all shapes?
-	var mySiz = (graphShapes.length + gndVerts.length + sphVerts.length);
+	var mySiz = (graphShapes.length + gndVerts.length + sphVerts.length + axisVerts.length);
 
 	// How many vertices total?
 	var nn = mySiz / floatsPerVertex;
@@ -347,6 +368,10 @@ function initVertexBuffer(gl) {
 	sphStart = i;
 	for (j = 0; j < sphVerts.length; i++, j++) {// don't initialize i -- reuse it!
 		colorShapes[i] = sphVerts[j];
+	}
+	axisStart = i;
+	for (j = 0; j < axisVerts.length; i++, j++) {
+		colorShapes[i] = axisVerts[j];
 	}
 
 	// Create a buffer object on the graphics hardware:
@@ -564,12 +589,11 @@ function DrawTap(gl, modelMatrix, u_ModelMatrix) {
 
 	modelMatrix.translate(0.5, 2.0, 0.0);
 	modelMatrix.scale(0.6, 0.6, 1.0);
-	modelMatrix.rotate(-90.0, 0.0, 0.0)
+	modelMatrix.rotate(-90.0, 0.0, 0.0);
 	gl.uniformMatrix4fv(u_ModelMatrix, false, modelMatrix.elements);
 	gl.drawArrays(gl.TRIANGLES, 0.0, 36.0);
-	modelMatrix.rotate(90.0, 0.0, 0.0)
+	modelMatrix.rotate(90.0, 0.0, 0.0);
 	pushMatrix(modelMatrix);
-
 }
 
 function DrawOutlet(gl, modelMatrix, u_ModelMatrix, x, y, z) {
@@ -584,6 +608,17 @@ function DrawOutlet(gl, modelMatrix, u_ModelMatrix, x, y, z) {
 	modelMatrix.rotate(g_angle02, 0.0, 0.0, 1.0);
 	gl.uniformMatrix4fv(u_ModelMatrix, false, modelMatrix.elements);
 	gl.drawArrays(gl.TRIANGLES, 36.0, 48.0);
+	modelMatrix.translate(3.0, 1.0, 1.0);
+	modelMatrix.rotate(g_angle02, 0.0, 0.0, 1.0);
+	gl.uniformMatrix4fv(u_ModelMatrix, false, modelMatrix.elements);
+	gl.drawArrays(gl.TRIANGLES, 36.0, 48.0);
+	modelMatrix.translate(4.0, 1.0, 1.0);
+	modelMatrix.rotate(g_angle02, 0.0, 0.0, 1.0);
+	gl.uniformMatrix4fv(u_ModelMatrix, false, modelMatrix.elements);
+	gl.drawArrays(gl.TRIANGLES, 36.0, 48.0);
+	DrawAxis(gl, modelMatrix, u_ModelMatrix);
+
+
 }
 
 function DrawWater(gl, modelMatrix, u_ModelMatrix, x, y, z) {
@@ -613,10 +648,23 @@ function DrawSph(gl, modelMatrix, u_ModelMatrix) {
 	pushMatrix(modelMatrix);
 	modelMatrix.translate(2, 0, -4);
 	modelMatrix.scale(1, 1, 1);
+	quatMatrix.setFromQuat(qTot.x, qTot.y, qTot.z, qTot.w);
+	modelMatrix.concat(quatMatrix);
 	gl.uniformMatrix4fv(u_ModelMatrix, false, modelMatrix.elements);
 	gl.drawArrays(gl.TRIANGLE_STRIP,				// use this drawing primitive, and
 		sphStart / floatsPerVertex,	// start at this vertex number, and 
 		sphVerts.length / floatsPerVertex);	// draw this many vertices.
+	DrawAxis(gl, modelMatrix, u_ModelMatrix);
+}
+
+function DrawAxis(gl, modelMatrix, u_ModelMatrix) {
+	modelMatrix.scale(100, 100, 100);
+	gl.uniformMatrix4fv(u_ModelMatrix, false, modelMatrix.elements);
+	gl.drawArrays(
+		gl.LINES, // use this drawing primitive, and
+		axisStart / floatsPerVertex, // start at this vertex number, and
+		axisVerts.length / floatsPerVertex
+	);
 }
 
 function DrawGrid(gl, modelMatrix, u_ModelMatrix) {
@@ -624,49 +672,58 @@ function DrawGrid(gl, modelMatrix, u_ModelMatrix) {
 	gl.drawArrays(gl.LINES, gndStart / floatsPerVertex, gndVerts.length / floatsPerVertex);
 }
 
-function drawAll(canvas, gl, n, currentAngle, modelMatrix, u_ModelMatrix) {
+function drawAll(gl, n, currentAngle, modelMatrix, u_ModelMatrix) {
 	//==============================================================================
 	// Clear <canvas>  colors AND the depth buffer
 	gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
-	
+
 	//===========================================================
 	modelMatrix.setIdentity();
-	gl.viewport(0, 0, canvas.width / 2, canvas.height);
-	modelMatrix.perspective(35, 1.0, 1.0, 500.0);
+	gl.viewport(0, 0, g_canvas.width / 2, g_canvas.height);
+	modelMatrix.perspective(35, (g_canvas.width / 2) / g_canvas.height, 1.0, 500.0);
 	modelMatrix.lookAt(g_EyeX, g_EyeY, g_EyeZ,	// center of projection
 		g_LookAtX, g_LookAtY, g_LookatZ,	// look-at point 
 		0, 0, 1);	// View UP vector.
 
 	DrawGrid(gl, modelMatrix, u_ModelMatrix);
-	DrawTap(gl, modelMatrix, u_ModelMatrix)
-	DrawOutlet(gl, modelMatrix, u_ModelMatrix, 0.5, 1.5, 0.5)
-	DrawOutlet(gl, modelMatrix, u_ModelMatrix, 0.5, 2, 0.5)
-	DrawWater(gl, modelMatrix, u_ModelMatrix, 1 + g_move, 1.8, 0.5)
-	DrawWater(gl, modelMatrix, u_ModelMatrix, 1.5 + g_move, 1.8, 0.5)
-	DrawWater(gl, modelMatrix, u_ModelMatrix, 2 + g_move, 1.8, 0.5)
-	DrawControl(gl, modelMatrix, u_ModelMatrix, 7, 0, 0, g_xKeySpin)
-	DrawControl(gl, modelMatrix, u_ModelMatrix, 4, 0, 0, g_yKeySpin)
-	DrawSph(gl, modelMatrix, u_ModelMatrix)
-
+	DrawTap(gl, modelMatrix, u_ModelMatrix);
+	DrawOutlet(gl, modelMatrix, u_ModelMatrix, 1.5, -0.5, 0);
+	DrawOutlet(gl, modelMatrix, u_ModelMatrix, 1.5, -1, 0);
+	DrawWater(gl, modelMatrix, u_ModelMatrix, 1, -0.5 - g_move, 0);
+	DrawWater(gl, modelMatrix, u_ModelMatrix, 1, -1.0 - g_move, 0);
+	DrawWater(gl, modelMatrix, u_ModelMatrix, 1, -1.5 - g_move, 0);
+	DrawControl(gl, modelMatrix, u_ModelMatrix, 7, 0, 0, g_xKeySpin);
+	DrawControl(gl, modelMatrix, u_ModelMatrix, 4, 0, 0, g_yKeySpin);
+	DrawSph(gl, modelMatrix, u_ModelMatrix);
+	DrawAxis(gl, modelMatrix, u_ModelMatrix);
 	//===========================================================
 	modelMatrix.setIdentity();    // DEFINE 'world-space' coords.
-	gl.viewport(canvas.width / 2, 0, canvas.width / 2, canvas.height);
+	gl.viewport(g_canvas.width / 2, 0, g_canvas.width / 2, g_canvas.height);
 	modelMatrix.setOrtho(-10, 10, -10, 10, 0, 99.0);
+	modelMatrix.setOrtho(
+		-(g_canvas.width / 2 / 40),
+		(g_canvas.width / 2 / 40),
+		-(g_canvas.height / 40),
+		(g_canvas.height / 40),
+		0,
+		99
+	);
 	modelMatrix.lookAt(g_EyeX, g_EyeY, g_EyeZ,	// center of projection
 		g_LookAtX, g_LookAtY, g_LookatZ,	// wlook-at point 
 		0, 0, 1);
 
 	pushMatrix(modelMatrix);
 	DrawGrid(gl, modelMatrix, u_ModelMatrix);
-	DrawTap(gl, modelMatrix, u_ModelMatrix)
-	DrawOutlet(gl, modelMatrix, u_ModelMatrix, 0.5, 1.5, 0.5)
-	DrawOutlet(gl, modelMatrix, u_ModelMatrix, 0.5, 2, 0.5)
-	DrawWater(gl, modelMatrix, u_ModelMatrix, 1 + g_move, 1.8, 0.5)
-	DrawWater(gl, modelMatrix, u_ModelMatrix, 1.5 + g_move, 1.8, 0.5)
-	DrawWater(gl, modelMatrix, u_ModelMatrix, 2 + g_move, 1.8, 0.5)
-	DrawControl(gl, modelMatrix, u_ModelMatrix, 7, 0, 0, g_xKeySpin)
-	DrawControl(gl, modelMatrix, u_ModelMatrix, 4, 0, 0, g_yKeySpin)
-	DrawSph(gl, modelMatrix, u_ModelMatrix)
+	DrawTap(gl, modelMatrix, u_ModelMatrix);
+	DrawOutlet(gl, modelMatrix, u_ModelMatrix, 1.5, -0.5, 0);
+	DrawOutlet(gl, modelMatrix, u_ModelMatrix, 1.5, -1, 0);
+	DrawWater(gl, modelMatrix, u_ModelMatrix, 1, -0.5 - g_move, 0);
+	DrawWater(gl, modelMatrix, u_ModelMatrix, 1, -1.0 - g_move, 0);
+	DrawWater(gl, modelMatrix, u_ModelMatrix, 1, -1.5 - g_move, 0);
+	DrawControl(gl, modelMatrix, u_ModelMatrix, 7, 0, 0, g_xKeySpin);
+	DrawControl(gl, modelMatrix, u_ModelMatrix, 4, 0, 0, g_yKeySpin);
+	DrawSph(gl, modelMatrix, u_ModelMatrix);
+	DrawAxis(gl, modelMatrix, u_ModelMatrix);
 }
 
 
@@ -758,8 +815,6 @@ function myKeyDown(kev) {
 			g_LookAtX -= g_DisplaceX;
 			g_LookAtY -= g_DisplaceY;
 			g_LookatZ -= g_DisplaceZ;
-			console.log(g_EyeX, g_EyeY, g_EyeZ)
-			console.log(g_LookAtX, g_LookAtY, g_LookatZ)
 			break;
 		case "KeyW":
 			g_LookatZ += 0.04;
@@ -780,23 +835,119 @@ function myKeyDown(kev) {
 	}
 }
 
-function myMouseDown() {
-	g_isDrag = true;
+function myMouseDown(ev) {
+	//==============================================================================
+	// Called when user PRESSES down any mouse button;
+	// 									(Which button?    console.log('ev.button='+ev.button);   )
+	// 		ev.clientX, ev.clientY == mouse pointer location, but measured in webpage 
+	//		pixels: left-handed coords; UPPER left origin; Y increases DOWNWARDS (!)  
+
+	// Create right-handed 'pixel' coords with origin at WebGL canvas LOWER left;
+	var rect = ev.target.getBoundingClientRect();	// get canvas corners in pixels
+	var xp = ev.clientX - rect.left;									// x==0 at canvas left edge
+	var yp = g_canvas.height - (ev.clientY - rect.top);	// y==0 at canvas bottom edge
+
+	// Convert to Canonical View Volume (CVV) coordinates too:
+	var x = (xp - g_canvas.width / 2) / 		// move origin to center of canvas and
+		(g_canvas.width / 2);			// normalize canvas to -1 <= x < +1,
+	var y = (yp - g_canvas.height / 2) /		//										 -1 <= y < +1.
+		(g_canvas.height / 2);
+	//	console.log('myMouseDown(CVV coords  ):  x, y=\t',x,',\t',y);
+
+	g_isDrag = true;											// set our mouse-dragging flag
+	g_xMclik = x;													// record where mouse-dragging began
+	g_yMclik = y;
 };
 
 function myMouseMove(ev) {
-	if (g_isDrag == false) return;
-	var rect = ev.target.getBoundingClientRect();
-	var xp = ev.clientX - rect.left;
-	var yp = canvas.height - (ev.clientY - rect.top);
-	var x = (xp - canvas.width / 2) / (canvas.width / 2);
-	var y = (yp - canvas.height / 2) / (canvas.height / 2);
-	g_xDragTo += (x - g_xDragTo);
-	g_yDragTo += (y - g_yDragTo);
-	g_xDragTo = x;
-	g_yDragTo = y;
+	//==============================================================================
+	// Called when user MOVES the mouse with a button already pressed down.
+	// 									(Which button?   console.log('ev.button='+ev.button);    )
+	// 		ev.clientX, ev.clientY == mouse pointer location, but measured in webpage 
+	//		pixels: left-handed coords; UPPER left origin; Y increases DOWNWARDS (!)  
+
+	if (g_isDrag == false) return;				// IGNORE all mouse-moves except 'dragging'
+
+	// Create right-handed 'pixel' coords with origin at WebGL canvas LOWER left;
+	var rect = ev.target.getBoundingClientRect();	// get canvas corners in pixels
+	var xp = ev.clientX - rect.left;									// x==0 at canvas left edge
+	var yp = g_canvas.height - (ev.clientY - rect.top);	// y==0 at canvas bottom edge
+	//  console.log('myMouseMove(pixel coords): xp,yp=\t',xp,',\t',yp);
+
+	// Convert to Canonical View Volume (CVV) coordinates too:
+	var x = (xp - g_canvas.width / 2) / 		// move origin to center of canvas and
+		(g_canvas.width / 2);		// normalize canvas to -1 <= x < +1,
+	var y = (yp - g_canvas.height / 2) /		//									-1 <= y < +1.
+		(g_canvas.height / 2);
+	//	console.log('myMouseMove(CVV coords  ):  x, y=\t',x,',\t',y);
+
+	// find how far we dragged the mouse:
+	g_xMdragTot += (x - g_xMclik);			// Accumulate change-in-mouse-position,&
+	g_yMdragTot += (y - g_yMclik);
+	dragQuat(x - g_xMclik, y - g_yMclik);
+	// Report new mouse position & how far we moved on webpage:
+	g_xMclik = x;											// Make next drag-measurement from here.
+	g_yMclik = y;
 };
 
-function myMouseUp() {
+function myMouseUp(ev) {
+	//==============================================================================
+	// Called when user RELEASES mouse button pressed previously.
+	// 									(Which button?   console.log('ev.button='+ev.button);    )
+	// 		ev.clientX, ev.clientY == mouse pointer location, but measured in webpage 
+	//		pixels: left-handed coords; UPPER left origin; Y increases DOWNWARDS (!)  
+
+	// Create right-handed 'pixel' coords with origin at WebGL canvas LOWER left;
+	var rect = ev.target.getBoundingClientRect();	// get canvas corners in pixels
+	var xp = ev.clientX - rect.left;									// x==0 at canvas left edge
+	var yp = g_canvas.height - (ev.clientY - rect.top);	// y==0 at canvas bottom edge
+	//  console.log('myMouseUp  (pixel coords):\n\t xp,yp=\t',xp,',\t',yp);
+
+	// Convert to Canonical View Volume (CVV) coordinates too:
+	var x = (xp - g_canvas.width / 2) / 		// move origin to center of canvas and
+		(g_canvas.width / 2);			// normalize canvas to -1 <= x < +1,
+	var y = (yp - g_canvas.height / 2) /		//										 -1 <= y < +1.
+		(g_canvas.height / 2);
+
 	g_isDrag = false;
+	g_xMdragTot += (x - g_xMclik);
+	g_yMdragTot += (y - g_yMclik);
+	dragQuat(x - g_xMclik, y - g_yMclik);
 };
+function dragQuat(xdrag, ydrag) {
+	//==============================================================================
+	// Called when user drags mouse by 'xdrag,ydrag' as measured in CVV coords.
+	// We find a rotation axis perpendicular to the drag direction, and convert the 
+	// drag distance to an angular rotation amount, and use both to set the value of 
+	// the quaternion qNew.  We then combine this new rotation with the current 
+	// rotation stored in quaternion 'qTot' by quaternion multiply.  Note the 
+	// 'draw()' function converts this current 'qTot' quaternion to a rotation 
+	// matrix for drawing. 
+	var qTmp = new Quaternion(0, 0, 0, 1);
+
+	var dist = Math.sqrt(xdrag * xdrag + ydrag * ydrag);
+	// console.log('xdrag,ydrag=',xdrag.toFixed(5),ydrag.toFixed(5),'dist=',dist.toFixed(5));
+	qNew.setFromAxisAngle(-ydrag + 0.0001, xdrag + 0.0001, 0.0, dist * 150.0);
+	// (why add tiny 0.0001? To ensure we never have a zero-length rotation axis)
+	// why axis (x,y,z) = (-yMdrag,+xMdrag,0)? 
+	// -- to rotate around +x axis, drag mouse in -y direction.
+	// -- to rotate around +y axis, drag mouse in +x direction.
+
+	qTmp.multiply(qNew, qTot);			// apply new rotation to current rotation. 
+	//--------------------------
+	// IMPORTANT! Why qNew*qTot instead of qTot*qNew? (Try it!)
+	// ANSWER: Because 'duality' governs ALL transformations, not just matrices. 
+	// If we multiplied in (qTot*qNew) order, we would rotate the drawing axes
+	// first by qTot, and then by qNew--we would apply mouse-dragging rotations
+	// to already-rotated drawing axes.  Instead, we wish to apply the mouse-drag
+	// rotations FIRST, before we apply rotations from all the previous dragging.
+	//------------------------
+	// IMPORTANT!  Both qTot and qNew are unit-length quaternions, but we store 
+	// them with finite precision. While the product of two (EXACTLY) unit-length
+	// quaternions will always be another unit-length quaternion, the qTmp length
+	// may drift away from 1.0 if we repeat this quaternion multiply many times.
+	// A non-unit-length quaternion won't work with our quaternion-to-matrix fcn.
+	// Matrix4.prototype.setFromQuat().
+	qTmp.normalize();						// normalize to ensure we stay at length==1.0.
+	qTot.copy(qTmp);
+}
