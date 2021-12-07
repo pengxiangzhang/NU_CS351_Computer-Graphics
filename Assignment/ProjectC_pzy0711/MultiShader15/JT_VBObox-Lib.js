@@ -635,13 +635,13 @@ function VBObox1() {
   */
   // SHADED, sphere-like dots:
   this.FRAG_SRC = //---------------------- FRAGMENT SHADER source code 
-  '#ifdef GL_ES  \n' +
-  'precision mediump float; \n' +
-  '#endif \n' +
-  'varying vec4 v_Colr1; \n' +
-  'void main() { \n' +
+    '#ifdef GL_ES  \n' +
+    'precision mediump float; \n' +
+    '#endif \n' +
+    'varying vec4 v_Colr1; \n' +
+    'void main() { \n' +
     'gl_FragColor = v_Colr1;  \n' +
-  '}';
+    '}';
 
   makeSphere();
   var mySize = sphVerts.length;
@@ -698,7 +698,7 @@ function VBObox1() {
   this.ModelMatrix = new Matrix4();	// Transforms CVV axes to model axes.
   this.NormalMatrix = new Matrix4();
   this.MvpMatrix = new Matrix4();
-  this.eyePos = new Float32Array(3); 
+  this.eyePos = new Float32Array(3);
 
   this.u_ModelMatrixLoc;						// GPU location for u_ModelMat uniform
   this.u_NormalMatrixLoc;
@@ -777,7 +777,7 @@ VBObox1.prototype.init = function () {
   this.a_Pos1Loc = gl.getAttribLocation(this.shaderLoc, 'a_Pos1');
   this.a_Norm1Loc = gl.getAttribLocation(this.shaderLoc, 'a_Norm1');
 
-  if (this.a_Pos1Loc < 0 || ! this.a_Norm1Loc) {
+  if (this.a_Pos1Loc < 0 || !this.a_Norm1Loc) {
     console.log(this.constructor.name +
       '.init() Failed to get GPU location of one of the attributes');
     return -1;	// error exit.
@@ -791,7 +791,7 @@ VBObox1.prototype.init = function () {
   this.u_NormalMatrixLoc = gl.getUniformLocation(this.shaderLoc, 'u_NormalMatrix');
   this.u_isBlinnLoc = gl.getUniformLocation(this.shaderLoc, 'u_check');
 
-  this.lamp1.u_pos = gl.getUniformLocation(this.shaderLoc,  'u_LightSet[0].pos');
+  this.lamp1.u_pos = gl.getUniformLocation(this.shaderLoc, 'u_LightSet[0].pos');
   this.lamp1.u_diff = gl.getUniformLocation(this.shaderLoc, 'u_LightSet[0].DiffuseLight');
   this.lamp1.u_ambi = gl.getUniformLocation(this.shaderLoc, 'u_LightSet[0].AmbientLight');
   this.lamp1.u_spec = gl.getUniformLocation(this.shaderLoc, 'u_LightSet[0].SpeculareLight');
@@ -826,6 +826,26 @@ VBObox1.prototype.switchToMe = function () {
   // b) call bindBuffer to disconnect the GPU from its currently-bound VBO and
   //  instead connect to our own already-created-&-filled VBO.  This new VBO can 
   //    supply values to use as attributes in our newly-selected shader program:
+  gl.uniform1i(this.u_isBlinnLoc, g_isBlinn);
+  gl.uniform3fv(this.u_eyePosLoc, this.eyePos);
+
+  this.lamp1.I_pos.elements.set([g_lightPosX, g_lightPosY, g_lightPosZ]);
+  this.lamp1.I_ambi.elements.set([g_lightAmbiR, g_lightAmbiG, g_lightAmbiB]);
+  this.lamp1.I_diff.elements.set([g_lightDiffR, g_lightDiffG, g_lightDiffB]);
+  this.lamp1.I_spec.elements.set([g_lightSpecR, g_lightSpecG, g_lightSpecB]);
+
+  gl.uniform3fv(this.lamp1.u_pos, this.lamp1.I_pos.elements.slice(0, 3));
+  gl.uniform3fv(this.lamp1.u_ambi, this.lamp1.I_ambi.elements);
+  gl.uniform3fv(this.lamp1.u_diff, this.lamp1.I_diff.elements);
+  gl.uniform3fv(this.lamp1.u_spec, this.lamp1.I_spec.elements);
+
+  this.matl1.setMatl(parseInt(g_currMatl));
+
+  gl.uniform3fv(this.matl1.uLoc_Ke, this.matl1.K_emit.slice(0, 3));
+  gl.uniform3fv(this.matl1.uLoc_Ka, this.matl1.K_ambi.slice(0, 3));
+  gl.uniform3fv(this.matl1.uLoc_Kd, this.matl1.K_diff.slice(0, 3));
+  gl.uniform3fv(this.matl1.uLoc_Ks, this.matl1.K_spec.slice(0, 3));
+  gl.uniform1i(this.matl1.uLoc_Kshiny, parseInt(g_shiny, 10));
   gl.bindBuffer(gl.ARRAY_BUFFER,	    // GLenum 'target' for this GPU buffer 
     this.vboLoc);			// the ID# the GPU uses for our VBO.
 
