@@ -17,7 +17,7 @@ var log = function(msg) {
 };
 
 /**
- * Which arguments are enums.
+ * Which arguements are enums.
  * @type {!Object.<number, string>}
  */
 var glValidEnumContexts = {

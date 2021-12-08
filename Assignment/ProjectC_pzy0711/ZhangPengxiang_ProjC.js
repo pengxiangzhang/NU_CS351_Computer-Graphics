@@ -1,705 +1,368 @@
 //3456789_123456789_123456789_123456789_123456789_123456789_123456789_123456789_
 // (JT: why the numbers? counts columns, helps me keep 80-char-wide listings)
 //
-// Chapter 5: ColoredTriangle.js (c) 2012 matsuda  AND
-// Chapter 4: RotatingTriangle_withButtons.js (c) 2012 matsuda
-// became:
+// TABS set to 2.
 //
-// BasicShapes.js  MODIFIED for EECS 351-1, 
+// ORIGINAL SOURCE:
+// RotatingTranslatedTriangle.js (c) 2012 matsuda
+// HIGHLY MODIFIED to make:
+//
+// JT_MultiShader.js  for EECS 351-1, 
 //									Northwestern Univ. Jack Tumblin
-//		--converted from 2D to 4D (x,y,z,w) vertices
-//		--extend to other attributes: color, surface normal, etc.
-//		--demonstrate how to keep & use MULTIPLE colored shapes in just one
-//			Vertex Buffer Object(VBO). 
-//		--create several canonical 3D shapes borrowed from 'GLUT' library:
-//		--Demonstrate how to make a 'stepped spiral' tri-strip,  and use it
-//			to build a cylinder, sphere, and torus.
-//
-// Vertex shader program----------------------------------
-var VSHADER_SOURCE =
-    'uniform mat4 u_ModelMatrix;\n' +
-    'attribute vec4 a_Position;\n' +
-    'attribute vec4 a_Color;\n' +
-    'varying vec4 v_Color;\n' +
-    'void main() {\n' +
-    '  gl_Position = u_ModelMatrix * a_Position;\n' +
-    '  gl_PointSize = 10.0;\n' +
-    '  v_Color = a_Color;\n' +
-    '}\n';
 
-// Fragment shader program----------------------------------
-var FSHADER_SOURCE =
-    //  '#ifdef GL_ES\n' +
-    'precision mediump float;\n' +
-    //  '#endif GL_ES\n' +
-    'varying vec4 v_Color;\n' +
-    'void main() {\n' +
-    '  gl_FragColor = v_Color;\n' +
-    '}\n';
+/* Show how to use 3 separate VBOs with different verts, attributes & uniforms. 
+-------------------------------------------------------------------------------
+  Create a 'VBObox' object/class/prototype & library to collect, hold & use all 
+  data and functions we need to render a set of vertices kept in one Vertex 
+  Buffer Object (VBO) on-screen, including:
+  --All source code for all Vertex Shader(s) and Fragment shader(s) we may use 
+    to render the vertices stored in this VBO;
+  --all variables needed to select and access this object's VBO, shaders, 
+    uniforms, attributes, samplers, texture buffers, and any misc. items. 
+  --all variables that hold values (uniforms, vertex arrays, element arrays) we 
+    will transfer to the GPU to enable it to render the vertices in our VBO.
+  --all user functions: init(), draw(), adjust(), reload(), empty(), restore().
+  Put all of it into 'JT_VBObox-Lib.js', a separate library file.
 
-// Global Variables
-var floatsPerVertex = 7;	// # of Float32Array elements used for each vertex
-var g_canvas = document.getElementById('webgl');
-var quatMatrix = new Matrix4();
-// (x,y,z,w)position + (r,g,b)color
-// Later, see if you can add:
-// (x,y,z) surface normal + (tx,ty) texture addr.
-//------------For mouse click-and-drag------------
+USAGE:
+------
+1) If your program needs another shader program, make another VBObox object:
+ (e.g. an easy vertex & fragment shader program for drawing a ground-plane grid; 
+ a fancier shader program for drawing Gouraud-shaded, Phong-lit surfaces, 
+ another shader program for drawing Phong-shaded, Phong-lit surfaces, and
+ a shader program for multi-textured bump-mapped Phong-shaded & lit surfaces...)
+ 
+ HOW:
+ a) COPY CODE: create a new VBObox object by renaming a copy of an existing 
+ VBObox object already given to you in the VBObox-Lib.js file. 
+ (e.g. copy VBObox1 code to make a VBObox3 object).
+
+ b) CREATE YOUR NEW, GLOBAL VBObox object.  
+ For simplicity, make it a global variable. As you only have ONE of these 
+ objects, its global scope is unlikely to cause confusions/errors, and you can
+ avoid its too-frequent use as a function argument.
+ (e.g. above main(), write:    var phongBox = new VBObox3();  )
+
+ c) INITIALIZE: in your JS progam's main() function, initialize your new VBObox;
+ (e.g. inside main(), write:  phongBox.init(); )
+
+ d) DRAW: in the JS function that performs all your webGL-drawing tasks, draw
+ your new VBObox's contents on-screen. 
+ (NOTE: as it's a COPY of an earlier VBObox, your new VBObox's on-screen results
+  should duplicate the initial drawing made by the VBObox you copied.  
+  If that earlier drawing begins with the exact same initial position and makes 
+  the exact same animated moves, then it will hide your new VBObox's drawings!
+  --THUS-- be sure to comment out the earlier VBObox's draw() function call  
+  to see the draw() result of your new VBObox on-screen).
+  (e.g. inside drawAll(), add this:  
+      phongBox.switchToMe();
+      phongBox.draw();            )
+
+ e) ADJUST: Inside the JS function that animates your webGL drawing by adjusting
+ uniforms (updates to ModelMatrix, etc) call the 'adjust' function for each of your
+VBOboxes.  Move all the uniform-adjusting operations from that JS function into the
+'adjust()' functions for each VBObox. 
+
+2) Customize the VBObox contents; add vertices, add attributes, add uniforms.
+ ==============================================================================*/
+
+
+// Global Variables  
+//   (These are almost always a BAD IDEA, but here they eliminate lots of
+//    tedious function arguments. 
+//    Later, collect them into just a few global, well-organized objects!)
+// ============================================================================
+// for WebGL usage:--------------------
+var gl; // WebGL rendering context -- the 'webGL' object
+// in JavaScript with all its member fcns & data
+var g_canvasID; // HTML-5 'canvas' element ID#
+
+// For multiple VBOs & Shaders:-----------------
+worldBox = new VBObox0(); // Holds VBO & shaders for 3D 'world' ground-plane grid, etc;
+GouraudBox = new VBObox1(); // "  "  for first set of custom-shaded 3D parts
+PhongBox = new VBObox2(); // "  "  for second set of custom-shaded 3D parts
+
+// For animation:---------------------
+var dateNow = Date.now(); // Timestamp (in milliseconds) for our 
+// most-recently-drawn WebGL screen contents.  
+// Set & used by moveAll() fcn to update all
+// time-varying params for our webGL drawings.
+// All time-dependent params (you can add more!)
+var g_angleNow0 = 0.0; // Current rotation angle, in degrees.
+var g_angleRate0 = 45.0; // Rotation angle rate, in degrees/second.
+//---------------
+var g_angleNow1 = 100.0; // current angle, in degrees
+var g_angleRate1 = 95.0; // rotation angle rate, degrees/sec
+var g_angleMax1 = 150.0; // max, min allowed angle, in degrees
+var g_angleMin1 = 60.0;
+//---------------
+var g_angleNow2 = 0.0; // Current rotation angle, in degrees.
+var g_angleRate2 = -62.0; // Rotation angle rate, in degrees/second.
+
+//---------------
+var g_posNow0 = 0.0; // current position
+var g_posRate0 = 0.6; // position change rate, in distance/second.
+var g_posMax0 = 0.5; // max, min allowed for g_posNow;
+var g_posMin0 = -0.5;
+// ------------------
+var g_posNow1 = 0.0; // current position
+var g_posRate1 = 0.5; // position change rate, in distance/second.
+var g_posMax1 = 1.0; // max, min allowed positions
+var g_posMin1 = -1.0;
+//---------------
+var g_angle = 0.0; // initial rotation angle
+var g_angleRate = 45.0; // rotation speed, in degrees/second 
+
+// For mouse/keyboard:------------------------
+var g_show0 = 1; // 0==Show, 1==Hide VBO0 contents on-screen.
+var g_show1 = 1; // 	"					"			VBO1		"				"				" 
+var g_show2 = 0; //  "         "     VBO2    "       "       "
+
+var g_myMaterial;
+var g_showBlinn = false;
+var g_shiny;
+var g_shinyUser;
+
+var g_lightXUser = document.getElementById('posX').value;
+var g_lightYUser = document.getElementById('posY').value;
+var g_lightZUser = document.getElementById('posZ').value;
+var g_lightXPos;
+var g_lightYPos;
+var g_lightZPos;
+
+
+var g_lightAmbiRUser = document.getElementById('ambiR').value;
+var g_lightAmbiGUser = document.getElementById('ambiG').value;
+var g_lightAmbiBUser = document.getElementById('ambiB').value;
+var g_lightRDiff;
+var g_lightGDiff;
+var g_lightBDiff;
+
+var g_lightDiffRUser = document.getElementById('diffR').value;
+var g_lightDiffGUser = document.getElementById('diffG').value;
+var g_lightDiffBUser = document.getElementById('diffB').value;
+var g_lightRAmbi;
+var g_lightGAmbi;
+var g_lightBAmbi;
+
+var g_lightSpecRUser = document.getElementById('specR').value;
+var g_lightSpecGUser = document.getElementById('specG').value;
+var g_lightSpecBUser = document.getElementById('specB').value;
+var g_lightRSpec;
+var g_lightGSpec;
+var g_lightBSpec;
+
+var g_lightXPos_old;
+var g_lightYPos_old;
+var g_lightZPos_old;
+var g_lightRAmbi_old;
+var g_lightGAmbi_old;
+var g_lightBAmbi_old;
+var g_lightRDiff_old;
+var g_lightGDiff_old;
+var g_lightBDiff_old;
+var g_lightRSpec_old;
+var g_lightGSpec_old;
+var g_lightBSpec_old;
+
+// GLOBAL CAMERA CONTROL:					// 
+g_worldMat = new Matrix4(); // Changes CVV drawing axes to 'world' axes.
+// (equivalently: transforms 'world' coord. numbers (x,y,z,w) to CVV coord. numbers)
+// WHY?
+// Lets mouse/keyboard functions set just one global matrix for 'view' and 
+// 'projection' transforms; then VBObox objects use it in their 'adjust()'
+// member functions to ensure every VBObox draws its 3D parts and assemblies
+// using the same 3D camera at the same 3D position in the same 3D world).
 var g_isDrag = false;
 var g_xMclik = 0.0;
 var g_yMclik = 0.0;
 var g_xMdragTot = 0.0;
 var g_yMdragTot = 0.0;
 var qNew = new Quaternion(0, 0, 0, 1); // most-recent mouse drag's rotation
-var qTot = new Quaternion(0, 0, 0, 1);	// 'current' orientation (made from qNew)
+var qTot = new Quaternion(0, 0, 0, 1); // 'current' orientation (made from qNew)
 //------------For keyboard moving------------
 var g_xKeySpin = 0.0;
 var g_yKeySpin = 0.0;
-//------------For Animation------------
-var g_angle01 = 0;
-var g_angle01Rate = 10;
-var g_angle02 = 0;
-var g_angle02Rate = 100;
-var g_move = 0;
-var g_moveRate = 0.01;
 //------------Camera------------
-var g_EyeX = 5, g_EyeY = -29.5, g_EyeZ = 39.5;
-var g_LookAtX = 5, g_LookAtY = -28.5, g_LookatZ = 38.5;
+var g_EyeX = 0.55,
+    g_EyeY = -9.95,
+    g_EyeZ = 9.14;
+var g_LookAtX = 0.55,
+    g_LookAtY = -8.95,
+    g_LookatZ = 8.54;
 var theta = 90;
 var g_DisplaceX = (g_LookAtX - g_EyeX) * 0.5;
 var g_DisplaceY = (g_LookAtY - g_EyeY) * 0.5;
 var g_DisplaceZ = (g_LookatZ - g_EyeZ) * 0.5;
-//------------Light0------------
-var light0_switch = 1;
-var ambient0_switch = 1;
-var diffuse0_switch = 1;
-var specular0_switch = 1;
-var light0_ambient = 1.0;
-var light0_diffuse = 1.0;
-var light0_specular = 1.0;
-var light0_ambient_old;
-var	light0_diffuse_old;
-var light0_specular_old;
+
+// ! Global camera control
+g_worldMat = new Matrix4();
+
 function main() {
-    //==============================================================================
-    // Retrieve <canvas> element
+    //=============================================================================
+    // Retrieve the HTML-5 <canvas> element where webGL will draw our pictures:
     window.addEventListener("keydown", myKeyDown, false);
     window.addEventListener("mousedown", myMouseDown);
     window.addEventListener("mousemove", myMouseMove);
     window.addEventListener("mouseup", myMouseUp);
-    // Get the rendering context for WebGL
-    var gl = getWebGLContext(g_canvas);
+    g_canvasID = document.getElementById('webgl');
+    // Create the the WebGL rendering context: one giant JavaScript object that
+    // contains the WebGL state machine adjusted by large sets of WebGL functions,
+    // built-in variables & parameters, and member data. Every WebGL function call
+    // will follow this format:  gl.WebGLfunctionName(args);
+
+    // Create the the WebGL rendering context: one giant JavaScript object that
+    // contains the WebGL state machine, adjusted by big sets of WebGL functions,
+    // built-in variables & parameters, and member data. Every WebGL func. call
+    // will follow this format:  gl.WebGLfunctionName(args);
+    //SIMPLE VERSION:  gl = getWebGLContext(g_canvasID); 
+    // Here's a BETTER version:
+    gl = g_canvasID.getContext("webgl", {
+        preserveDrawingBuffer: true
+    });
+    // This fancier-looking version disables HTML-5's default screen-clearing, so 
+    // that our drawMain() 
+    // function will over-write previous on-screen results until we call the 
+    // gl.clear(COLOR_BUFFER_BIT); function. )
     if (!gl) {
         console.log('Failed to get the rendering context for WebGL');
         return;
     }
 
-    // Initialize shaders
-    if (!initShaders(gl, VSHADER_SOURCE, FSHADER_SOURCE)) {
-        console.log('Failed to intialize shaders.');
-        return;
-    }
+    gl.clearColor(0.2, 0.1, 0.3, 1); // RGBA color for clearing <canvas>
 
-    //
-    var n = initVertexBuffer(gl);
-    if (n < 0) {
-        console.log('Failed to set the vertex information');
-        return;
-    }
-
-    // Specify the color for clearing <canvas>
-    gl.clearColor(0.0, 0.0, 0.0, 1.0);
-
-    // NEW!! Enable 3D depth-test when drawing: don't over-draw at any pixel
-    // unless the new Z value is closer to the eye than the old one..
-    //	gl.depthFunc(gl.LESS);			 // WebGL default setting: (default)
     gl.enable(gl.DEPTH_TEST);
 
-    //==============================================================================
-    // STEP 4:   REMOVE This "reversed-depth correction"
-    //       when you apply any of the 3D camera-lens transforms:
-    //      (e.g. Matrix4 member functions 'perspective(), frustum(), ortho() ...)
-    //======================REVERSED-DEPTH Correction===============================
-    /*
-      //  b) reverse the usage of the depth-buffer's stored values, like this:
-      gl.enable(gl.DEPTH_TEST); // enabled by default, but let's be SURE.
-      gl.clearDepth(0.0);       // each time we 'clear' our depth buffer, set all
-                                // pixel depths to 0.0  (1.0 is DEFAULT)
-      gl.depthFunc(gl.GREATER); // draw a pixel only if its depth value is GREATER
-                                // than the depth buffer's stored value.
-                                // (gl.LESS is DEFAULT; reverse it!)
-    */
-    //=====================================================================
-
-    // Get handle to graphics system's storage location of u_ModelMatrix
-    var u_ModelMatrix = gl.getUniformLocation(gl.program, 'u_ModelMatrix');
-    if (!u_ModelMatrix) {
-        console.log('Failed to get the storage location of u_ModelMatrix');
-        return;
-    }
-    // Create a local version of our model matrix in JavaScript
-    var modelMatrix = new Matrix4();
-
-    // Create, init current rotation angle value in JavaScript
-    var currentAngle = 0.0;
-
-    //-----------------
-    // Start drawing: create 'tick' variable whose value is this function:
-    var tick = function () {
-        currentAngle = animate(currentAngle);  // Update the rotation angle
-        drawResize(gl, n, currentAngle, modelMatrix, u_ModelMatrix);
-
-        // report current angle on console
-        //console.log('currentAngle=',currentAngle);
-        requestAnimationFrame(tick, g_canvas);
-        // Request that the browser re-draw the webpage
+    // Initialize each of our 'vboBox' objects: 
+    worldBox.init(gl); // VBO + shaders + uniforms + attribs for our 3D world,
+    // including ground-plane,                       
+    GouraudBox.init(gl); //  "		"		"  for 1st kind of shading & lighting
+    PhongBox.init(gl); //  "   "   "  for 2nd kind of shading & lighting
+    frontEndInput()
+    // ==============ANIMATION=============
+    // Quick tutorials on synchronous, real-time animation in JavaScript/HTML-5: 
+    //    https://webglfundamentals.org/webgl/lessons/webgl-animation.html
+    //  or
+    //  	http://creativejs.com/resources/requestanimationframe/
+    //		--------------------------------------------------------
+    // Why use 'requestAnimationFrame()' instead of the simpler-to-use
+    //	fixed-time setInterval() or setTimeout() functions?  Because:
+    //		1) it draws the next animation frame 'at the next opportunity' instead 
+    //			of a fixed time interval. It allows your browser and operating system
+    //			to manage its own processes, power, & computing loads, and to respond 
+    //			to on-screen window placement (to skip battery-draining animation in 
+    //			any window that was hidden behind others, or was scrolled off-screen)
+    //		2) it helps your program avoid 'stuttering' or 'jittery' animation
+    //			due to delayed or 'missed' frames.  Your program can read and respond 
+    //			to the ACTUAL time interval between displayed frames instead of fixed
+    //		 	fixed-time 'setInterval()' calls that may take longer than expected.
+    //------------------------------------
+    var tick = function() { // locally (within main() only), define our 
+        // self-calling animation function. 
+        setCamera();
+        // g_canvasID.width = innerWidth * 0.98;
+        // g_canvasID.height = innerHeight *0.75;
+        requestAnimationFrame(tick, g_canvasID); // browser callback request; wait
+        // til browser is ready to re-draw canvas, then
+        timerAll(); // Update all time-varying params, and
+        drawAll(); // Draw all the VBObox contents
+        var xtraMargin = 20; // keep a margin (otherwise, browser adds scroll-bars)
+        g_canvasID.width = (innerWidth - xtraMargin) * 0.99;
+        g_canvasID.height = ((innerHeight * 3 / 4) - xtraMargin) * 0.99;
     };
-    tick();							// start (and continue) animation: draw current image
-
+    //------------------------------------
+    tick(); // do it again!
 }
 
-function drawResize(gl, n, currentAngle, modelMatrix, u_ModelMatrix) {
-    var xtraMargin = 16;    // keep a margin (otherwise, browser adds scroll-bars)
-    g_canvas.width = innerWidth - xtraMargin;
-    g_canvas.height = (innerHeight * 3 / 4) - xtraMargin;
-    // IMPORTANT!  Need a fresh drawing in the re-sized viewports.
-    drawAll(gl, n, currentAngle, modelMatrix, u_ModelMatrix);   // Draw shapes
+function timerAll() {
+    //=============================================================================
+    // Find new values for all time-varying parameters used for on-screen drawing
+    // use local variables to find the elapsed time.
+    var nowMS = Date.now(); // current time (in milliseconds)
+    var elapsed = nowMS - dateNow; // 
+    dateNow = nowMS; // update for next webGL drawing.
+    if (elapsed > 1000.0) {
+        // Browsers won't re-draw 'canvas' element that isn't visible on-screen 
+        // (user chose a different browser tab, etc.); when users make the browser
+        // window visible again our resulting 'elapsedMS' value has gotten HUGE.
+        // Instead of allowing a HUGE change in all our time-dependent parameters,
+        // let's pretend that only a nominal 1/30th second passed:
+        elapsed = 1000.0 / 30.0;
+    }
+    // Find new time-dependent parameters using the current or elapsed time:
+    // Continuous rotation:
+    g_angleNow1 = g_angleNow1 + (g_angleRate1 * elapsed) / 1000.0;
+    g_angleNow1 %= 360.0;
 }
 
-function initVertexBuffer(gl) {
-    //==============================================================================
-    // Create one giant vertex buffer object (VBO) that holds all vertices for all
-    // shapes.
-
-    var graphShapes = new Float32Array([
-        // ------------A------------
-        0.5, 0.0, 0.0, 1.0, 0.970, 0.000, 0.857, // Node 1
-        0.5, 0.0, 1.0, 1.0, 0.000, 0.097, 0.970, // Node 2
-        0.5, 2.0, 1.0, 1.0, 0.970, 0.097, 0.000, // Node 6
-        0.5, 2.0, 1.0, 1.0, 0.970, 0.097, 0.000, // Node 6
-        0.5, 2.0, 0.0, 1.0, 0.938, 0.970, 0.000, // Node 5
-        0.5, 0.0, 0.0, 1.0, 0.970, 0.000, 0.857, // Node 1
-
-
-        0.5, 2.0, 1.0, 1.0, 0.970, 0.097, 0.000, // Node 6
-        0.0, 2.0, 1.0, 1.0, 0.270, 0.270, 0.267, // Node 7
-        0.0, 2.0, 0.0, 1.0, 0.000, 0.970, 0.372, // Node 4
-        0.0, 2.0, 0.0, 1.0, 0.000, 0.970, 0.372, // Node 4
-        0.5, 2.0, 0.0, 1.0, 0.938, 0.970, 0.000, // Node 5
-        0.5, 2.0, 1.0, 1.0, 0.970, 0.097, 0.000, // Node 6
-
-
-        0.0, 2.0, 1.0, 1.0, 0.270, 0.270, 0.267, // Node 7
-        0.0, 2.0, 0.0, 1.0, 0.000, 0.970, 0.372, // Node 4
-        0.0, 0.0, 0.0, 1.0, 0.970, 0.000, 0.000, // Node 0
-        0.0, 0.0, 0.0, 1.0, 0.970, 0.000, 0.000, // Node 0
-        0.0, 0.0, 1.0, 1.0, 0.000, 0.954, 0.970, // Node 3
-        0.0, 2.0, 1.0, 1.0, 0.270, 0.270, 0.267, // Node 7
-
-
-        0.5, 0.0, 1.0, 1.0, 0.000, 0.097, 0.970, // Node 2
-        0.5, 0.0, 0.0, 1.0, 0.970, 0.000, 0.857, // Node 1
-        0.0, 0.0, 0.0, 1.0, 0.970, 0.000, 0.000, // Node 0
-        0.0, 0.0, 0.0, 1.0, 0.970, 0.000, 0.000, // Node 0
-        0.0, 0.0, 1.0, 1.0, 0.000, 0.954, 0.970, // Node 3
-        0.5, 0.0, 1.0, 1.0, 0.000, 0.097, 0.970, // Node 2
-
-
-        0.0, 2.0, 1.0, 1.0, 0.270, 0.270, 0.267, // Node 7
-        0.0, 0.0, 1.0, 1.0, 0.000, 0.954, 0.970, // Node 3
-        0.5, 0.0, 1.0, 1.0, 0.000, 0.097, 0.970, // Node 2
-        0.5, 0.0, 1.0, 1.0, 0.000, 0.097, 0.970, // Node 2
-        0.5, 2.0, 1.0, 1.0, 0.970, 0.097, 0.000, // Node 6
-        0.0, 2.0, 1.0, 1.0, 0.270, 0.270, 0.267, // Node 7
-
-
-        0.0, 2.0, 0.0, 1.0, 0.000, 0.970, 0.372, // Node 4
-        0.5, 2.0, 0.0, 1.0, 0.938, 0.970, 0.000, // Node 5
-        0.5, 0.0, 0.0, 1.0, 0.970, 0.000, 0.857, // Node 1
-        0.5, 0.0, 0.0, 1.0, 0.970, 0.000, 0.857, // Node 1
-        0.0, 0.0, 0.0, 1.0, 0.970, 0.000, 0.000, // Node 0
-        0.0, 2.0, 0.0, 1.0, 0.000, 0.970, 0.372, // Node 4
-
-        // ------------B------------
-        1.0, 0.0, 0.0, 1.0, 0.970, 0.000, 0.857, // Node 1
-        1.0, 0.0, 1.0, 1.0, 0.000, 0.097, 0.970, // Node 2
-        1.0, 1.0, 1.0, 1.0, 0.970, 0.097, 0.000, // Node 6
-        1.0, 1.0, 1.0, 1.0, 0.970, 0.097, 0.000, // Node 6
-        1.0, 1.0, 0.0, 1.0, 0.938, 0.970, 0.000, // Node 5
-        1.0, 0.0, 0.0, 1.0, 0.970, 0.000, 0.857, // Node 1
-
-        1.0, 1.0, 1.0, 1.0, 0.970, 0.097, 0.000, // Node 6
-        1.0, 0.0, 1.0, 1.0, 0.000, 0.097, 0.970, // Node 2
-        2.0, 1.0, 1.0, 1.0, 0.590, 0.425, 0.425,
-
-
-        1.0, 1.0, 1.0, 1.0, 0.970, 0.097, 0.000, // Node 6
-        0.0, 1.0, 1.0, 1.0, 0.270, 0.270, 0.267, // Node 7
-        0.0, 1.0, 0.0, 1.0, 0.000, 0.970, 0.372, // Node 4
-        0.0, 1.0, 0.0, 1.0, 0.000, 0.970, 0.372, // Node 4
-        1.0, 1.0, 0.0, 1.0, 0.938, 0.970, 0.000, // Node 5
-        1.0, 1.0, 1.0, 1.0, 0.970, 0.097, 0.000, // Node 6
-
-        0.0, 1.0, 0.0, 1.0, 0.000, 0.970, 0.372, // Node 4
-        0.0, 1.0, 1.0, 1.0, 0.270, 0.270, 0.267, // Node 7
-        0.0, 2.0, 1.0, 1.0, 0.590, 0.425, 0.425,
-
-
-        0.0, 1.0, 1.0, 1.0, 0.270, 0.270, 0.267, // Node 7
-        0.0, 1.0, 0.0, 1.0, 0.000, 0.970, 0.372, // Node 4
-        0.0, 0.0, 0.0, 1.0, 0.970, 0.000, 0.000, // Node 0
-        0.0, 0.0, 0.0, 1.0, 0.970, 0.000, 0.000, // Node 0
-        0.0, 0.0, 1.0, 1.0, 0.000, 0.954, 0.970, // Node 3
-        0.0, 1.0, 1.0, 1.0, 0.270, 0.270, 0.267, // Node 7
-
-        0.0, 0.0, 0.0, 1.0, 0.970, 0.000, 0.000, // Node 0
-        0.0, 1.0, 0.0, 1.0, 0.000, 0.970, 0.372, // Node 4
-        -1.0, 1.0, 0.0, 1.0, 0.000, 0.970, 0.372,
-
-        1.0, 0.0, 1.0, 1.0, 0.000, 0.097, 0.970, // Node 2
-        1.0, 0.0, 0.0, 1.0, 0.970, 0.000, 0.857, // Node 1
-        0.0, 0.0, 0.0, 1.0, 0.970, 0.000, 0.000, // Node 0
-        0.0, 0.0, 0.0, 1.0, 0.970, 0.000, 0.000, // Node 0
-        0.0, 0.0, 1.0, 1.0, 0.000, 0.954, 0.970, // Node 3
-        1.0, 0.0, 1.0, 1.0, 0.000, 0.097, 0.970, // Node 2
-
-        0.0, 0.0, 0.0, 1.0, 0.970, 0.000, 0.000, // Node 0
-        1.0, 0.0, 0.0, 1.0, 0.970, 0.000, 0.857, // Node 1
-        1.0, -1.0, 0.0, 1.0, 0.000, 0.970, 0.372,
-
-
-        0.0, 1.0, 1.0, 1.0, 0.270, 0.270, 0.267, // Node 7
-        0.0, 0.0, 1.0, 1.0, 0.000, 0.954, 0.970, // Node 3
-        1.0, 0.0, 1.0, 1.0, 0.000, 0.097, 0.970, // Node 2
-        1.0, 0.0, 1.0, 1.0, 0.000, 0.097, 0.970, // Node 2
-        1.0, 1.0, 1.0, 1.0, 0.970, 0.097, 0.000, // Node 6
-        0.0, 1.0, 1.0, 1.0, 0.270, 0.270, 0.267, // Node 7
-
-        0.0, 1.0, 0.0, 1.0, 0.000, 0.970, 0.372, // Node 4
-        1.0, 1.0, 0.0, 1.0, 0.938, 0.970, 0.000, // Node 5
-        1.0, 0.0, 0.0, 1.0, 0.970, 0.000, 0.857, // Node 1
-        1.0, 0.0, 0.0, 1.0, 0.970, 0.000, 0.857, // Node 1
-        0.0, 0.0, 0.0, 1.0, 0.970, 0.000, 0.000, // Node 0
-        0.0, 1.0, 0.0, 1.0, 0.000, 0.970, 0.372, // Node 4
-
-        // ------------C------------
-        0.5, 0.0, 0.0, 1.0, 0.970, 0.000, 0.857, // Node 1
-        0.5, 0.0, 1.0, 1.0, 0.000, 0.097, 0.970, // Node 2
-        2.0, 1.0, 1.0, 1.0, 0.970, 0.097, 0.000, // Node 6
-        2.0, 1.0, 1.0, 1.0, 0.970, 0.097, 0.000, // Node 6
-        2.0, 1.0, 0.0, 1.0, 0.938, 0.970, 0.000, // Node 5
-        0.5, 0.0, 0.0, 1.0, 0.970, 0.000, 0.857, // Node 1
-
-        2.0, 1.0, 0.0, 1.0, 0.938, 0.970, 0.000, // Node 5
-        2.0, 1.0, 1.0, 1.0, 0.970, 0.097, 0.000, // Node 6
-        3.0, 1.0, 1.0, 1.0, 0.970, 0.097, 0.000, // Node
-        3.0, 1.0, 1.0, 1.0, 0.970, 0.097, 0.000, // Node
-        3.0, 1.0, 0.0, 1.0, 0.938, 0.970, 0.000, // Node 5
-        2.0, 1.0, 0.0, 1.0, 0.938, 0.970, 0.000, // Node 5
-
-
-        2.0, 1.0, 1.0, 1.0, 0.970, 0.097, 0.000, // Node 6
-        1.0, 1.0, 1.0, 1.0, 0.270, 0.270, 0.267, // Node 7
-        1.0, 1.0, 0.0, 1.0, 0.000, 0.970, 0.372, // Node 4
-        1.0, 1.0, 0.0, 1.0, 0.000, 0.970, 0.372, // Node 4
-        2.0, 1.0, 0.0, 1.0, 0.938, 0.970, 0.000, // Node 5
-        2.0, 1.0, 1.0, 1.0, 0.970, 0.097, 0.000, // Node 6
-
-
-        1.0, 1.0, 1.0, 1.0, 0.270, 0.270, 0.267, // Node 7
-        1.0, 1.0, 0.0, 1.0, 0.000, 0.970, 0.372, // Node 4
-        0.0, 0.0, 0.0, 1.0, 0.970, 0.000, 0.000, // Node 0
-        0.0, 0.0, 0.0, 1.0, 0.970, 0.000, 0.000, // Node 0
-        0.0, 0.0, 1.0, 1.0, 0.000, 0.954, 0.970, // Node 3
-        1.0, 1.0, 1.0, 1.0, 0.270, 0.270, 0.267, // Node 7
-
-
-        0.5, 0.0, 1.0, 1.0, 0.000, 0.097, 0.970, // Node 2
-        0.5, 0.0, 0.0, 1.0, 0.970, 0.000, 0.857, // Node 1
-        0.0, 0.0, 0.0, 1.0, 0.970, 0.000, 0.000, // Node 0
-        0.0, 0.0, 0.0, 1.0, 0.970, 0.000, 0.000, // Node 0
-        0.0, 0.0, 1.0, 1.0, 0.000, 0.954, 0.970, // Node 3
-        0.5, 0.0, 1.0, 1.0, 0.000, 0.097, 0.970, // Node 2
-
-
-        1.0, 1.0, 1.0, 1.0, 0.270, 0.270, 0.267, // Node 7
-        0.0, 0.0, 1.0, 1.0, 0.000, 0.954, 0.970, // Node 3
-        0.5, 0.0, 1.0, 1.0, 0.000, 0.097, 0.970, // Node 2
-        0.5, 0.0, 1.0, 1.0, 0.000, 0.097, 0.970, // Node 2
-        2.0, 1.0, 1.0, 1.0, 0.970, 0.097, 0.000, // Node 6
-        1.0, 1.0, 1.0, 1.0, 0.270, 0.270, 0.267, // Node 7
-
-
-        1.0, 1.0, 0.0, 1.0, 0.000, 0.970, 0.372, // Node 4
-        2.0, 1.0, 0.0, 1.0, 0.938, 0.970, 0.000, // Node 5
-        0.5, 0.0, 0.0, 1.0, 0.970, 0.000, 0.857, // Node 1
-        0.5, 0.0, 0.0, 1.0, 0.970, 0.000, 0.857, // Node 1
-        0.0, 0.0, 0.0, 1.0, 0.970, 0.000, 0.000, // Node 0
-        1.0, 1.0, 0.0, 1.0, 0.000, 0.970, 0.372, // Node 4
-
-    ]);
-    makeGroundGrid();				// create, fill the gndVerts array
-    makeSphere()					// create, fill the sphVerts array
-    axisVerts = new Float32Array([
-        0.0, 0.0, 0.0, 1.0, 1.0, 0.0, 0.0,
-        1, 0.0, 0.0, 1.0, 1.0, 0.0, 0.0,
-
-        0.0, 0.0, 0.0, 1.0, 0.0, 1.0, 0.0,
-        0.0, 1, 0.0, 1.0, 0.0, 1.0, 0.0,
-
-        0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 1.0,
-        0.0, 0.0, 1, 1.0, 0.0, 0.0, 1.0,
-    ]);
-    // how many floats total needed to store all shapes?
-    var mySiz = (graphShapes.length + gndVerts.length + sphVerts.length + axisVerts.length);
-
-    // How many vertices total?
-    var nn = mySiz / floatsPerVertex;
-    console.log('nn is', nn, 'mySiz is', mySiz, 'floatsPerVertex is', floatsPerVertex);
-    // Copy all shapes into one big Float32 array:
-    var colorShapes = new Float32Array(mySiz);
-    // Copy them:  remember where to start for each shape:
-    cylStart = 0;							// we stored the cylinder first.
-    for (i = 0, j = 0; j < graphShapes.length; i++, j++) {
-        colorShapes[i] = graphShapes[j];
-    }
-    gndStart = i;
-    for (j = 0; j < gndVerts.length; i++, j++) {
-        colorShapes[i] = gndVerts[j];
-    }
-    sphStart = i;
-    for (j = 0; j < sphVerts.length; i++, j++) {// don't initialize i -- reuse it!
-        colorShapes[i] = sphVerts[j];
-    }
-    axisStart = i;
-    for (j = 0; j < axisVerts.length; i++, j++) {
-        colorShapes[i] = axisVerts[j];
-    }
-
-    // Create a buffer object on the graphics hardware:
-    var shapeBufferHandle = gl.createBuffer();
-    if (!shapeBufferHandle) {
-        console.log('Failed to create the shape buffer object');
-        return false;
-    }
-
-    // Bind the the buffer object to target:
-    gl.bindBuffer(gl.ARRAY_BUFFER, shapeBufferHandle);
-    // Transfer data from Javascript array colorShapes to Graphics system VBO
-    // (Use sparingly--may be slow if you transfer large shapes stored in files)
-    gl.bufferData(gl.ARRAY_BUFFER, colorShapes, gl.STATIC_DRAW);
-
-    //Get graphics system's handle for our Vertex Shader's position-input variable:
-    var a_Position = gl.getAttribLocation(gl.program, 'a_Position');
-    if (a_Position < 0) {
-        console.log('Failed to get the storage location of a_Position');
-        return -1;
-    }
-
-    var FSIZE = colorShapes.BYTES_PER_ELEMENT; // how many bytes per stored value?
-
-    // Use handle to specify how to retrieve **POSITION** data from our VBO:
-    gl.vertexAttribPointer(
-        a_Position, 	// choose Vertex Shader attribute to fill with data
-        4, 						// how many values? 1,2,3 or 4.  (we're using x,y,z,w)
-        gl.FLOAT, 		// data type for each value: usually gl.FLOAT
-        false, 				// did we supply fixed-point data AND it needs normalizing?
-        FSIZE * floatsPerVertex, // Stride -- how many bytes used to store each vertex?
-        // (x,y,z,w, r,g,b) * bytes/value
-        0);						// Offset -- now many bytes from START of buffer to the
-    // value we will actually use?
-    gl.enableVertexAttribArray(a_Position);
-    // Enable assignment of vertex buffer object's position data
-
-    // Get graphics system's handle for our Vertex Shader's color-input variable;
-    var a_Color = gl.getAttribLocation(gl.program, 'a_Color');
-    if (a_Color < 0) {
-        console.log('Failed to get the storage location of a_Color');
-        return -1;
-    }
-    // Use handle to specify how to retrieve **COLOR** data from our VBO:
-    gl.vertexAttribPointer(
-        a_Color, 				// choose Vertex Shader attribute to fill with data
-        3, 							// how many values? 1,2,3 or 4. (we're using R,G,B)
-        gl.FLOAT, 			// data type for each value: usually gl.FLOAT
-        false, 					// did we supply fixed-point data AND it needs normalizing?
-        FSIZE * 7, 			// Stride -- how many bytes used to store each vertex?
-        // (x,y,z,w, r,g,b) * bytes/value
-        FSIZE * 4);			// Offset -- how many bytes from START of buffer to the
-    // value we will actually use?  Need to skip over x,y,z,w
-
-    gl.enableVertexAttribArray(a_Color);
-    // Enable assignment of vertex buffer object's position data
-
-    //--------------------------------DONE!
-    // Unbind the buffer object
-    gl.bindBuffer(gl.ARRAY_BUFFER, null);
-
-    return nn;
-}
-
-function makeSphere() {
-    //==============================================================================
-    // Make a sphere from one OpenGL TRIANGLE_STRIP primitive.   Make ring-like 
-    // equal-lattitude 'slices' of the sphere (bounded by planes of constant z), 
-    // and connect them as a 'stepped spiral' design (see makeCylinder) to build the
-    // sphere from one triangle strip.
-      var slices = 30;		// # of slices of the sphere along the z axis. >=3 req'd
-                                                // (choose odd # or prime# to avoid accidental symmetry)
-      var sliceVerts	= 27;	// # of vertices around the top edge of the slice
-                                                // (same number of vertices on bottom of slice, too)
-      var topColr = new Float32Array([1.0, 1.0, 1.0]);	// North Pole: light gray
-      var sliceAngle = Math.PI/slices;	// lattitude angle spanned by one slice.
-    
-        // Create a (global) array to hold this sphere's vertices:
-      sphVerts = new Float32Array(  ((slices * 2* sliceVerts) -2) * floatsPerVertex);
-                                            // # of vertices * # of elements needed to store them. 
-                                            // each slice requires 2*sliceVerts vertices except 1st and
-                                            // last ones, which require only 2*sliceVerts-1.
-                                            
-        // Create dome-shaped top slice of sphere at z=+1
-        // s counts slices; v counts vertices; 
-        // j counts array elements (vertices * elements per vertex)
-        var cos0 = 0.0;					// sines,cosines of slice's top, bottom edge.
-        var sin0 = 0.0;
-        var cos1 = 0.0;
-        var sin1 = 0.0;	
-        var j = 0;							// initialize our array index
-        var isLast = 0;
-        var isFirst = 1;
-        for(s=0; s<slices; s++) {	// for each slice of the sphere,
-            // find sines & cosines for top and bottom of this slice
-            if(s==0) {
-                isFirst = 1;	// skip 1st vertex of 1st slice.
-                cos0 = 1.0; 	// initialize: start at north pole.
-                sin0 = 0.0;
-            }
-            else {					// otherwise, new top edge == old bottom edge
-                isFirst = 0;	
-                cos0 = cos1;
-                sin0 = sin1;
-            }								// & compute sine,cosine for new bottom edge.
-            cos1 = Math.cos((s+1)*sliceAngle);
-            sin1 = Math.sin((s+1)*sliceAngle);
-            // go around the entire slice, generating TRIANGLE_STRIP verts
-            // (Note we don't initialize j; grows with each new attrib,vertex, and slice)
-            if(s==slices-1) isLast=1;	// skip last vertex of last slice.
-            for(v=isFirst; v< 2*sliceVerts-isLast; v++, j+=floatsPerVertex) {	
-                if(v%2==0)
-                {				// put even# vertices at the the slice's top edge
-                                // (why PI and not 2*PI? because 0 <= v < 2*sliceVerts
-                                // and thus we can simplify cos(2*PI(v/2*sliceVerts))  
-                    sphVerts[j  ] = sin0 * Math.cos(Math.PI*(v)/sliceVerts); 	
-                    sphVerts[j+1] = sin0 * Math.sin(Math.PI*(v)/sliceVerts);	
-                    sphVerts[j+2] = cos0;		
-                    sphVerts[j+3] = 1.0;			
-                }
-                else { 	// put odd# vertices around the slice's lower edge;
-                                // x,y,z,w == cos(theta),sin(theta), 1.0, 1.0
-                                // 					theta = 2*PI*((v-1)/2)/capVerts = PI*(v-1)/capVerts
-                    sphVerts[j  ] = sin1 * Math.cos(Math.PI*(v-1)/sliceVerts);		// x
-                    sphVerts[j+1] = sin1 * Math.sin(Math.PI*(v-1)/sliceVerts);		// y
-                    sphVerts[j+2] = cos1;																				// z
-                    sphVerts[j+3] = 1.0;																				// w.		
-                }
-                
-                    sphVerts[j+4]=topColr[0]- s * 0.02; // equColr[0]; 
-                    sphVerts[j+5]=topColr[1]- s * 0.02; // equColr[1]; 
-                    sphVerts[j+6]=topColr[2] ; // equColr[2];
-                    sphVerts[j+7]=sphVerts[j];
-                    sphVerts[j+8]=sphVerts[j+1];
-                    sphVerts[j+9]=sphVerts[j+2];
-                
-            }
-        }
-    }
-
-
-function makeGroundGrid() {
-    //==============================================================================
-    // Create a list of vertices that create a large grid of lines in the x,y plane
-    // centered at x=y=z=0.  Draw this shape using the GL_LINES primitive.
-
-    var xcount = 100;			// # of lines to draw in x,y to make the grid.
-    var ycount = 100;
-    var xymax = 50.0;			// grid size; extends to cover +/-xymax in x and y.
-    var xColr = new Float32Array([1.0, 1.0, 0.3]);	// bright yellow
-    var yColr = new Float32Array([0.5, 1.0, 0.5]);	// bright green.
-
-    // Create an (global) array to hold this ground-plane's vertices:
-    gndVerts = new Float32Array(floatsPerVertex * 2 * (xcount + ycount));
-    // draw a grid made of xcount+ycount lines; 2 vertices per line.
-
-    var xgap = xymax / (xcount - 1);		// HALF-spacing between lines in x,y;
-    var ygap = xymax / (ycount - 1);		// (why half? because v==(0line number/2))
-
-    // First, step thru x values as we make vertical lines of constant-x:
-    for (v = 0, j = 0; v < 2 * xcount; v++, j += floatsPerVertex) {
-        if (v % 2 == 0) {	// put even-numbered vertices at (xnow, -xymax, 0)
-            gndVerts[j] = -xymax + (v) * xgap;	// x
-            gndVerts[j + 1] = -xymax;								// y
-            gndVerts[j + 2] = 0.0;									// z
-            gndVerts[j + 3] = 1.0;									// w.
-        } else {				// put odd-numbered vertices at (xnow, +xymax, 0).
-            gndVerts[j] = -xymax + (v - 1) * xgap;	// x
-            gndVerts[j + 1] = xymax;								// y
-            gndVerts[j + 2] = 0.0;									// z
-            gndVerts[j + 3] = 1.0;									// w.
-        }
-        gndVerts[j + 4] = xColr[0];			// red
-        gndVerts[j + 5] = xColr[1];			// grn
-        gndVerts[j + 6] = xColr[2];			// blu
-    }
-    // Second, step thru y values as wqe make horizontal lines of constant-y:
-    // (don't re-initialize j--we're adding more vertices to the array)
-    for (v = 0; v < 2 * ycount; v++, j += floatsPerVertex) {
-        if (v % 2 == 0) {		// put even-numbered vertices at (-xymax, ynow, 0)
-            gndVerts[j] = -xymax;								// x
-            gndVerts[j + 1] = -xymax + (v) * ygap;	// y
-            gndVerts[j + 2] = 0.0;									// z
-            gndVerts[j + 3] = 1.0;									// w.
-        } else {					// put odd-numbered vertices at (+xymax, ynow, 0).
-            gndVerts[j] = xymax;								// x
-            gndVerts[j + 1] = -xymax + (v - 1) * ygap;	// y
-            gndVerts[j + 2] = 0.0;									// z
-            gndVerts[j + 3] = 1.0;									// w.
-        }
-        gndVerts[j + 4] = yColr[0];			// red
-        gndVerts[j + 5] = yColr[1];			// grn
-        gndVerts[j + 6] = yColr[2];			// blu
-    }
-}
-
-function DrawTap(gl, modelMatrix, u_ModelMatrix) {
-    modelMatrix.scale(1.0, 1.0, 1.0);
-    modelMatrix.scale(3.0, 3.0, 3.0);
-    modelMatrix.translate(-1.5, 0.0, 0.0);
-
-    modelMatrix.rotate(90.0, 2.0, 0.0, 0.0);
-    gl.uniformMatrix4fv(u_ModelMatrix, false, modelMatrix.elements);
-    gl.drawArrays(gl.TRIANGLES, 0.0, 36.0);
-
-    modelMatrix.translate(0.5, 2.0, 0.0);
-    modelMatrix.scale(0.6, 0.6, 1.0);
-    modelMatrix.rotate(-90.0, 0.0, 0.0);
-    gl.uniformMatrix4fv(u_ModelMatrix, false, modelMatrix.elements);
-    gl.drawArrays(gl.TRIANGLES, 0.0, 36.0);
-    modelMatrix.rotate(90.0, 0.0, 0.0);
-    pushMatrix(modelMatrix);
-}
-
-function DrawOutlet(gl, modelMatrix, u_ModelMatrix, x, y, z) {
-    modelMatrix = popMatrix();
-    pushMatrix(modelMatrix);
-    modelMatrix.translate(x, y, z);
-    modelMatrix.scale(0.2, 0.2, 0.2);
-    modelMatrix.rotate(g_angle01, 0.0, 0.0, 1.0);
-    gl.uniformMatrix4fv(u_ModelMatrix, false, modelMatrix.elements);
-    gl.drawArrays(gl.TRIANGLES, 36.0, 48.0);
-    modelMatrix.translate(2.0, 1.0, 1.0);
-    modelMatrix.rotate(g_angle02, 0.0, 0.0, 1.0);
-    gl.uniformMatrix4fv(u_ModelMatrix, false, modelMatrix.elements);
-    gl.drawArrays(gl.TRIANGLES, 36.0, 48.0);
-    modelMatrix.translate(3.0, 1.0, 1.0);
-    modelMatrix.rotate(g_angle02, 0.0, 0.0, 1.0);
-    gl.uniformMatrix4fv(u_ModelMatrix, false, modelMatrix.elements);
-    gl.drawArrays(gl.TRIANGLES, 36.0, 48.0);
-    modelMatrix.translate(4.0, 1.0, 1.0);
-    modelMatrix.rotate(g_angle02, 0.0, 0.0, 1.0);
-    gl.uniformMatrix4fv(u_ModelMatrix, false, modelMatrix.elements);
-    gl.drawArrays(gl.TRIANGLES, 36.0, 48.0);
-}
-
-function DrawWater(gl, modelMatrix, u_ModelMatrix, x, y, z) {
-    modelMatrix = popMatrix();
-    pushMatrix(modelMatrix);
-    modelMatrix.translate(x, y, z);
-    modelMatrix.scale(0.2, 0.2, 0.2);
-    modelMatrix.rotate(g_angle01, 0.0, 0.0, 1.0);
-    gl.uniformMatrix4fv(u_ModelMatrix, false, modelMatrix.elements);
-    gl.drawArrays(gl.TRIANGLES, 36.0, 48.0);
-}
-
-function DrawControl(gl, modelMatrix, u_ModelMatrix, x, y, z, control) {
-    modelMatrix = popMatrix();
-    pushMatrix(modelMatrix);
-    modelMatrix.translate(x, y, z);
-    modelMatrix.scale(1, 1, 1);
-    modelMatrix.scale(1, 1, 1);
-    modelMatrix.rotate(control, 0, 0, 1);
-    gl.uniformMatrix4fv(u_ModelMatrix, false, modelMatrix.elements);
-    gl.drawArrays(gl.TRIANGLES, 84, 42);
-
-}
-
-function DrawSph(gl, modelMatrix, u_ModelMatrix) {
-    modelMatrix.translate(2, 0, -4);
-    modelMatrix.scale(1, 1, 1);
-    quatMatrix.setFromQuat(qTot.x, qTot.y, qTot.z, qTot.w);
-    modelMatrix.concat(quatMatrix);
-    gl.uniformMatrix4fv(u_ModelMatrix, false, modelMatrix.elements);
-    gl.drawArrays(gl.TRIANGLE_STRIP,				// use this drawing primitive, and
-        sphStart / floatsPerVertex,	// start at this vertex number, and
-        sphVerts.length / floatsPerVertex);	// draw this many vertices.
-}
-
-function DrawGrid(gl, modelMatrix, u_ModelMatrix) {
-    gl.uniformMatrix4fv(u_ModelMatrix, false, modelMatrix.elements);
-    gl.drawArrays(gl.LINES, gndStart / floatsPerVertex, gndVerts.length / floatsPerVertex);
-}
-
-function drawAll(gl, n, currentAngle, modelMatrix, u_ModelMatrix) {
-    //==============================================================================
-    // Clear <canvas>  colors AND the depth buffer
+function drawAll() {
+    //=============================================================================
+    // Clear on-screen HTML-5 <canvas> object:
     gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
 
-    //===========================================================
-    modelMatrix.setIdentity();
-    gl.viewport(0, 0, g_canvas.width, g_canvas.height);
-    modelMatrix.perspective(35, g_canvas.width / g_canvas.height, 1.0, 100.0);
-    modelMatrix.lookAt(g_EyeX, g_EyeY, g_EyeZ,	// center of projection
-        g_LookAtX, g_LookAtY, g_LookatZ,	// look-at point
-        0, 0, 1);	// View UP vector.
-
-    DrawGrid(gl, modelMatrix, u_ModelMatrix);
-    DrawSph(gl, modelMatrix, u_ModelMatrix);
-    // DrawTap(gl, modelMatrix, u_ModelMatrix);
-    // DrawOutlet(gl, modelMatrix, u_ModelMatrix, 1.5, -0.5, 0);
-    // DrawOutlet(gl, modelMatrix, u_ModelMatrix, 1.5, -1, 0);
-    // DrawWater(gl, modelMatrix, u_ModelMatrix, 1, -0.5 - g_move, 0);
-    // DrawWater(gl, modelMatrix, u_ModelMatrix, 1, -1.0 - g_move, 0);
-    // DrawWater(gl, modelMatrix, u_ModelMatrix, 1, -1.5 - g_move, 0);
-    // DrawControl(gl, modelMatrix, u_ModelMatrix, 7, 0, 0, g_xKeySpin);
-    // DrawControl(gl, modelMatrix, u_ModelMatrix, 4, 0, 0, g_yKeySpin);
+    g_myMaterial = getMatl();
+    g_shiny = document.getElementById("shiny").value;
+    setCamera();
+    if (g_show0 == 1) { // IF user didn't press HTML button to 'hide' VBO0:
+        worldBox.switchToMe(); // Set WebGL to render from this VBObox.
+        worldBox.adjust(); // Send new values for uniforms to the GPU, and
+        worldBox.draw(); // draw our VBO's contents using our shaders.
+    }
+    if (g_show1 == 1) { // IF user didn't press HTML button to 'hide' VBO1:
+        GouraudBox.switchToMe(); // Set WebGL to render from this VBObox.
+        GouraudBox.adjust(); // Send new values for uniforms to the GPU, and
+        GouraudBox.draw(); // draw our VBO's contents using our shaders.
+    }
+    if (g_show2 == 1) { // IF user didn't press HTML button to 'hide' VBO2:
+        PhongBox.switchToMe(); // Set WebGL to render from this VBObox.
+        PhongBox.adjust(); // Send new values for uniforms to the GPU, and
+        PhongBox.draw(); // draw our VBO's contents using our shaders.
+    }
+    /* // ?How slow is our own code?  	
+    var aftrDraw = Date.now();
+    var drawWait = aftrDraw - b4Draw;
+    console.log("wait b4 draw: ", b4Wait, "drawWait: ", drawWait, "mSec");
+    */
 }
 
-
-var g_last = Date.now();
-var up = 0
-
-function animate() {
-    var now = Date.now();
-    var elapsed = now - g_last;
-
-    g_last = now;
-
-    g_angle01 = g_angle01 + (g_angle01Rate * elapsed) / 1000.0;
-    if (g_angle01 > 180.0) g_angle01 = g_angle01 - 360.0;
-    if (g_angle01 < -180.0) g_angle01 = g_angle01 + 360.0;
-
-    g_angle02 = g_angle02 + (g_angle02Rate * elapsed) / 1000.0;
-    if (g_angle02 > 180.0) g_angle02 = g_angle02 - 360.0;
-    if (g_angle02 < -180.0) g_angle02 = g_angle02 + 360.0;
-
-    if (up == 0) {
-        if (g_move < 0) up = 1
-        if (g_move > 5) up = 0
-        g_move -= g_moveRate;
-    } else {
-        if (g_move < 0) up = 1
-        if (g_move > 5) up = 0
-        g_move += g_moveRate;
+function ShadingControl(val) {
+    value = val.value;
+    if (value == 0) {
+        g_show1 = 1;
+        g_show2 = 0;
+        g_showBlinn = true;
+    } else if (value == 1) {
+        g_show1 = 1;
+        g_show2 = 0;
+        g_showBlinn = false;
+    } else if (value == 2) {
+      g_show1 = 0;
+      g_show2 = 1;
+        g_showBlinn = true;
+    } else if (value == 3) {
+        g_show1 = 0;
+        g_show2 = 1;
+        g_showBlinn = false;
     }
+}
+
+function setCamera() {
+    //============================================================================
+    // PLACEHOLDER:  sets a fixed camera at a fixed position for use by
+    // ALL VBObox objects.  REPLACE This with your own camera-control code.
+    g_worldMat.setIdentity();
+
+    gl.viewport(0, // Viewport lower-left corner
+        0, // location(in pixels)
+        g_canvasID.width, // viewport width,
+        g_canvasID.height); // viewport height in pixels.
+    g_worldMat.perspective(35, g_canvasID.width / g_canvasID.height, 1.0, 500.0);
+
+    g_worldMat.lookAt(g_EyeX, g_EyeY, g_EyeZ, // center of projection
+        g_LookAtX, g_LookAtY, g_LookatZ, // look-at point
+        0, 0, 1);
+    // READY to draw in the 'world' coordinate system.
+    //------------END COPY
 }
 
 //==================HTML Button Callbacks
@@ -739,7 +402,7 @@ function myKeyDown(kev) {
             g_LookAtY -= rotatedY;
             break;
         case "ArrowLeft":
-            g_EyeX += rotatedX;		// INCREASED for perspective camera)
+            g_EyeX += rotatedX; // INCREASED for perspective camera)
             g_EyeY += rotatedY;
 
             g_LookAtX += rotatedX;
@@ -790,19 +453,19 @@ function myMouseDown(ev) {
     //		pixels: left-handed coords; UPPER left origin; Y increases DOWNWARDS (!)
 
     // Create right-handed 'pixel' coords with origin at WebGL canvas LOWER left;
-    var rect = ev.target.getBoundingClientRect();	// get canvas corners in pixels
-    var xp = ev.clientX - rect.left;									// x==0 at canvas left edge
-    var yp = g_canvas.height - (ev.clientY - rect.top);	// y==0 at canvas bottom edge
+    var rect = ev.target.getBoundingClientRect(); // get canvas corners in pixels
+    var xp = ev.clientX - rect.left; // x==0 at canvas left edge
+    var yp = g_canvasID.height - (ev.clientY - rect.top); // y==0 at canvas bottom edge
 
     // Convert to Canonical View Volume (CVV) coordinates too:
-    var x = (xp - g_canvas.width / 2) / 		// move origin to center of canvas and
-        (g_canvas.width / 2);			// normalize canvas to -1 <= x < +1,
-    var y = (yp - g_canvas.height / 2) /		//										 -1 <= y < +1.
-        (g_canvas.height / 2);
+    var x = (xp - g_canvasID.width / 2) / // move origin to center of canvas and
+        (g_canvasID.width / 2); // normalize canvas to -1 <= x < +1,
+    var y = (yp - g_canvasID.height / 2) / //										 -1 <= y < +1.
+        (g_canvasID.height / 2);
     //	console.log('myMouseDown(CVV coords  ):  x, y=\t',x,',\t',y);
 
-    g_isDrag = true;											// set our mouse-dragging flag
-    g_xMclik = x;													// record where mouse-dragging began
+    g_isDrag = true; // set our mouse-dragging flag
+    g_xMclik = x; // record where mouse-dragging began
     g_yMclik = y;
 }
 
@@ -813,27 +476,27 @@ function myMouseMove(ev) {
     // 		ev.clientX, ev.clientY == mouse pointer location, but measured in webpage
     //		pixels: left-handed coords; UPPER left origin; Y increases DOWNWARDS (!)
 
-    if (g_isDrag == false) return;				// IGNORE all mouse-moves except 'dragging'
+    if (g_isDrag == false) return; // IGNORE all mouse-moves except 'dragging'
 
     // Create right-handed 'pixel' coords with origin at WebGL canvas LOWER left;
-    var rect = ev.target.getBoundingClientRect();	// get canvas corners in pixels
-    var xp = ev.clientX - rect.left;									// x==0 at canvas left edge
-    var yp = g_canvas.height - (ev.clientY - rect.top);	// y==0 at canvas bottom edge
+    var rect = ev.target.getBoundingClientRect(); // get canvas corners in pixels
+    var xp = ev.clientX - rect.left; // x==0 at canvas left edge
+    var yp = g_canvasID.height - (ev.clientY - rect.top); // y==0 at canvas bottom edge
     //  console.log('myMouseMove(pixel coords): xp,yp=\t',xp,',\t',yp);
 
     // Convert to Canonical View Volume (CVV) coordinates too:
-    var x = (xp - g_canvas.width / 2) / 		// move origin to center of canvas and
-        (g_canvas.width / 2);		// normalize canvas to -1 <= x < +1,
-    var y = (yp - g_canvas.height / 2) /		//									-1 <= y < +1.
-        (g_canvas.height / 2);
+    var x = (xp - g_canvasID.width / 2) / // move origin to center of canvas and
+        (g_canvasID.width / 2); // normalize canvas to -1 <= x < +1,
+    var y = (yp - g_canvasID.height / 2) / //									-1 <= y < +1.
+        (g_canvasID.height / 2);
     //	console.log('myMouseMove(CVV coords  ):  x, y=\t',x,',\t',y);
 
     // find how far we dragged the mouse:
-    g_xMdragTot += (x - g_xMclik);			// Accumulate change-in-mouse-position,&
+    g_xMdragTot += (x - g_xMclik); // Accumulate change-in-mouse-position,&
     g_yMdragTot += (y - g_yMclik);
     dragQuat(x - g_xMclik, y - g_yMclik);
     // Report new mouse position & how far we moved on webpage:
-    g_xMclik = x;											// Make next drag-measurement from here.
+    g_xMclik = x; // Make next drag-measurement from here.
     g_yMclik = y;
 }
 
@@ -845,16 +508,16 @@ function myMouseUp(ev) {
     //		pixels: left-handed coords; UPPER left origin; Y increases DOWNWARDS (!)
 
     // Create right-handed 'pixel' coords with origin at WebGL canvas LOWER left;
-    var rect = ev.target.getBoundingClientRect();	// get canvas corners in pixels
-    var xp = ev.clientX - rect.left;									// x==0 at canvas left edge
-    var yp = g_canvas.height - (ev.clientY - rect.top);	// y==0 at canvas bottom edge
+    var rect = ev.target.getBoundingClientRect(); // get canvas corners in pixels
+    var xp = ev.clientX - rect.left; // x==0 at canvas left edge
+    var yp = g_canvasID.height - (ev.clientY - rect.top); // y==0 at canvas bottom edge
     //  console.log('myMouseUp  (pixel coords):\n\t xp,yp=\t',xp,',\t',yp);
 
     // Convert to Canonical View Volume (CVV) coordinates too:
-    var x = (xp - g_canvas.width / 2) / 		// move origin to center of canvas and
-        (g_canvas.width / 2);			// normalize canvas to -1 <= x < +1,
-    var y = (yp - g_canvas.height / 2) /		//										 -1 <= y < +1.
-        (g_canvas.height / 2);
+    var x = (xp - g_canvasID.width / 2) / // move origin to center of canvas and
+        (g_canvasID.width / 2); // normalize canvas to -1 <= x < +1,
+    var y = (yp - g_canvasID.height / 2) / //										 -1 <= y < +1.
+        (g_canvasID.height / 2);
 
     g_isDrag = false;
     g_xMdragTot += (x - g_xMclik);
@@ -881,7 +544,7 @@ function dragQuat(xdrag, ydrag) {
     // -- to rotate around +x axis, drag mouse in -y direction.
     // -- to rotate around +y axis, drag mouse in +x direction.
 
-    qTmp.multiply(qNew, qTot);			// apply new rotation to current rotation.
+    qTmp.multiply(qNew, qTot); // apply new rotation to current rotation.
     //--------------------------
     // IMPORTANT! Why qNew*qTot instead of qTot*qNew? (Try it!)
     // ANSWER: Because 'duality' governs ALL transformations, not just matrices.
@@ -896,26 +559,80 @@ function dragQuat(xdrag, ydrag) {
     // may drift away from 1.0 if we repeat this quaternion multiply many times.
     // A non-unit-length quaternion won't work with our quaternion-to-matrix fcn.
     // Matrix4.prototype.setFromQuat().
-    qTmp.normalize();						// normalize to ensure we stay at length==1.0.
+    qTmp.normalize(); // normalize to ensure we stay at length==1.0.
     qTot.copy(qTmp);
 }
 
+function getMatl() {
+    matlSelect = document.getElementById('materials').value;
+    if (matlSelect == g_myMaterial) return g_myMaterial
+    var matl = new Material(parseInt(matlSelect));
+    g_shinyUser = matl.K_shiny;
+    document.getElementById('shiny').value = g_shinyUser;
+    return matlSelect;
+}
 
-function light0Control(){
-	
-	if (light0_switch = 1){
-        light0_switch = 0
-        light0_ambient_val = 0.0;
-		light0_ambient_old = light0_ambient_val;
-        light0_diffuse_val = 0.0;
-		light0_diffuse_old = light0_diffuse_val;
-        light0_specular_val = 0.0;
-		light0_specular_old = light0_specular_val;
-	}
-	else{
-        light0_switch = 1
-		light0_ambient_val = light0_ambient_old;
-		light0_diffuse_val = light0_diffuse_old;
-		light0_specular_val = light0_specular_old;
-	}
+function frontEndInput() {
+    g_lightXPos = document.getElementById('posX').value;
+    g_lightYPos = document.getElementById('posY').value;
+    g_lightZPos = document.getElementById('posZ').value;
+
+    g_lightRAmbi = document.getElementById('ambiR').value;
+    g_lightGAmbi = document.getElementById('ambiG').value;
+    g_lightBAmbi = document.getElementById('ambiB').value;
+
+    g_lightRDiff = document.getElementById('diffR').value;
+    g_lightGDiff = document.getElementById('diffG').value;
+    g_lightBDiff = document.getElementById('diffB').value;
+
+    g_lightRSpec = document.getElementById('specR').value;
+    g_lightGSpec = document.getElementById('specG').value;
+    g_lightBSpec = document.getElementById('specB').value;
+}
+
+
+function LightControl(selectObject) {
+    var value = selectObject.value;
+    if (value == 1) {
+        g_lightXPos = g_lightXPos_old
+        g_lightYPos = g_lightYPos_old
+        g_lightZPos = g_lightZPos_old
+        g_lightRAmbi = g_lightRAmbi_old
+        g_lightGAmbi = g_lightGAmbi_old
+        g_lightBAmbi = g_lightBAmbi_old
+        g_lightRDiff = g_lightRDiff_old
+        g_lightGDiff = g_lightGDiff_old
+        g_lightBDiff = g_lightBDiff_old
+        g_lightRSpec = g_lightRSpec_old
+        g_lightGSpec = g_lightGSpec_old
+        g_lightBSpec = g_lightBSpec_old
+
+    } else {
+        g_lightXPos_old = g_lightXPos;
+        g_lightYPos_old = g_lightYPos;
+        g_lightZPos_old = g_lightZPos;
+        g_lightRAmbi_old = g_lightRAmbi;
+        g_lightGAmbi_old = g_lightGAmbi;
+        g_lightBAmbi_old = g_lightBAmbi;
+        g_lightRDiff_old = g_lightRDiff;
+        g_lightGDiff_old = g_lightGDiff;
+        g_lightBDiff_old = g_lightBDiff;
+        g_lightRSpec_old = g_lightRSpec;
+        g_lightGSpec_old = g_lightGSpec;
+        g_lightBSpec_old = g_lightBSpec;
+
+        g_lightXPos = 0;
+        g_lightYPos = 0;
+        g_lightZPos = 0;
+        g_lightRAmbi = 0;
+        g_lightGAmbi = 0;
+        g_lightBAmbi = 0;
+        g_lightRDiff = 0;
+        g_lightGDiff = 0;
+        g_lightBDiff = 0;
+        g_lightRSpec = 0;
+        g_lightGSpec = 0;
+        g_lightBSpec = 0;
+
+    }
 }

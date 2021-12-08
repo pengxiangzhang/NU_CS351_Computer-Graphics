@@ -1,21 +1,9 @@
 // cuon-matrix.js (c) 2012 kanda and matsuda
 /** 
- * This is a class treating 4x4 matrix from the book 
- *	'WebGL Programming Guide' (2013),
- * MODIFIED 2/2014,8 by Jack Tumblin and students in Northwestern Univ EECS 351-1
- * "Intro to Computer Grapics'.
- * --added 'pushMatrix()' and 'popMatrix()' member fcns to provide a push-down/
- *    pop-up stack for any Matrix4 object, useful for traversing scene graphs.
- * --added Quaternion class (at end; modified from early THREE.js library)
- * --added 'printMe' member functions to print vector, matrix, and quaternions
- *	     in JavaScript console using 'console.log()' function
- *
- * --This library's 'setXXX()' functions replace current matrix contents;
- *  (e.g. setIdentity(), setRotate(), etc) and its 'concat()' and 'XXX()' fcns
- *  (e.g. rotate(), translate(), scale() etc) multiply current matrix contents 
- * with a with the function's newly-created matrix, e.g.:
- *  					[M_new] = [M_old][M_rotate] 
- * and returns matrix M_new.
+ * This is a class treating 4x4 matrix.
+ * This class contains the function that is equivalent to OpenGL matrix stack.
+ * The matrix after conversion is calculated by multiplying a conversion matrix from the right.
+ * The matrix is replaced by the calculated result.
  */
 
 /**
@@ -37,7 +25,7 @@ var Matrix4 = function(opt_src) {
     this.elements = new Float32Array([1,0,0,0, 0,1,0,0, 0,0,1,0, 0,0,0,1]);
   }
 };
- 
+
 /**
  * Set the identity matrix.
  * @return this
@@ -62,13 +50,14 @@ Matrix4.prototype.set = function(src) {
   s = src.elements;
   d = this.elements;
 
-  if (s === d) {		// do nothing if given 'this' as arg.
+  if (s === d) {
     return;
   }
     
-  for (i = 0; i < 16; ++i) {	
+  for (i = 0; i < 16; ++i) {
     d[i] = s[i];
   }
+
   return this;
 };
 
@@ -103,11 +92,10 @@ Matrix4.prototype.concat = function(other) {
   
   return this;
 };
-
 Matrix4.prototype.multiply = Matrix4.prototype.concat;
 
 /**
- * Multiply the three-dimensional vector (presumes w==1)
+ * Multiply the three-dimensional vector.
  * @param pos  The multiply vector
  * @return The result of multiplication(Float32Array)
  */
@@ -117,8 +105,8 @@ Matrix4.prototype.multiplyVector3 = function(pos) {
   var v = new Vector3();
   var result = v.elements;
 
-  result[0] = p[0] * e[0] + p[1] * e[4] + p[2] * e[ 8] + e[11]; // note the added 4th column
-  result[1] = p[0] * e[1] + p[1] * e[5] + p[2] * e[ 9] + e[12]; // (presumes hidden 4th vector element w==1)
+  result[0] = p[0] * e[0] + p[1] * e[4] + p[2] * e[ 8] + e[11];
+  result[1] = p[0] * e[1] + p[1] * e[5] + p[2] * e[ 9] + e[12];
   result[2] = p[0] * e[2] + p[1] * e[6] + p[2] * e[10] + e[13];
 
   return v;
@@ -359,7 +347,7 @@ Matrix4.prototype.frustum = function(left, right, bottom, top, near, far) {
 
 /**
  * Set the perspective projection matrix by fovy and aspect.
- * @param fovy The angle in degrees between the upper and lower sides of the frustum.
+ * @param fovy The angle between the upper and lower sides of the frustum.
  * @param aspect The aspect ratio of the frustum. (width/height)
  * @param near The distances to the nearer depth clipping plane. This value must be plus value.
  * @param far The distances to the farther depth clipping plane. This value must be plus value.
@@ -414,7 +402,7 @@ Matrix4.prototype.setPerspective = function(fovy, aspect, near, far) {
 
 /**
  * Multiply the perspective projection matrix from the right.
- * @param fovy The angle in degrees between the upper and lower sides of the frustum.
+ * @param fovy The angle between the upper and lower sides of the frustum.
  * @param aspect The aspect ratio of the frustum. (width/height)
  * @param near The distances to the nearer depth clipping plane. This value must be plus value.
  * @param far The distances to the farther depth clipping plane. This value must be plus value.
@@ -573,6 +561,7 @@ Matrix4.prototype.setRotate = function(angle, x, y, z) {
 
   return this;
 };
+
 /**
  * Multiply the matrix for rotation from the right.
  * The vector of rotation axis may not be normalized.
@@ -707,66 +696,9 @@ Matrix4.prototype.dropShadowDirectionally = function(normX, normY, normZ, planeX
 };
 
 /**
- *	Create rotation matrix from a given !UNIT-LENGTH! quaternion.
- * CAUTION!  forms WEIRD matrices from quaternions of other lengths!
- * @param qw the quaternion's 'real' coordinate
- * @param qx the quaternion's imaginary-i coord.
- * @param qy  "			"			"		imaginary-j coord.
- * @param qz  "			"			"		imaginary-k coord.
- *   -- Jack Tumblin 2/2014: from 'Math for 3D Game Programmng and CG"
- *													by Jed Lengyel, 34r Ed., pg. 91.
- */
-Matrix4.prototype.setFromQuat = function(qx, qy, qz, qw) {
-  var e = this.elements;
-  e[0]=1 -2*qy*qy -2*qz*qz; e[4]=   2*qx*qy -2*qw*qz; e[8] =   2*qx*qz +2*qw*qy; 
-  																																		e[12] = 0;
-  e[1]=   2*qx*qy +2*qw*qz; e[5]=1 -2*qx*qx -2*qz*qz; e[9] =   2*qy*qz -2*qw*qx;
-  																																		e[13] = 0;
-  e[2]=   2*qx*qz -2*qw*qy; e[6]=   2*qy*qz +2*qw*qx; e[10]=1 -2*qx*qx -2*qy*qy;
-  																																		e[14] = 0;
-  e[3]= 0;  								e[7]= 0;  								e[11] = 0;  		e[15] = 1;
-	return this;
-}
-
-/**
- * print matrix contents in console window:
- *			(J. Tumblin 2014.02.15; updated 2018.02.01)
- */
- Matrix4.prototype.printMe = function(opt_src) {
- var res = 5;
- var e = this.elements;   // why do this? just to make code more readable...
-  if(opt_src && typeof opt_src === 'string') {  // called w/ string argument?
-  // YES! use that string as our label:
-   console.log('-------------------', opt_src, '-------------------------');
-   console.log(	e[ 0].toFixed(res),'\t',e[ 4].toFixed(res),'\t', 
-   							e[ 8].toFixed(res),'\t',e[12].toFixed(res));
-   console.log(	e[ 1].toFixed(res),'\t',e[ 5].toFixed(res),'\t', 
-   							e[ 9].toFixed(res),'\t',e[13].toFixed(res));
-   console.log(	e[ 2].toFixed(res),'\t',e[ 6].toFixed(res),'\t', 
-   							e[10].toFixed(res),'\t',e[14].toFixed(res));
-   console.log(	e[ 3].toFixed(res),'\t',e[ 7].toFixed(res),'\t', 
-   							e[11].toFixed(res),'\t',e[15].toFixed(res));
-   console.log('-------------------', opt_src, '(end)--------------------\n');
-  }
-  else {   // No. use default labels:
-   console.log('----------------------4x4 Matrix----------------------------');
-   console.log(	e[ 0].toFixed(res),'\t',e[ 4].toFixed(res),'\t', 
-   							e[ 8].toFixed(res),'\t',e[12].toFixed(res));
-   console.log(	e[ 1].toFixed(res),'\t',e[ 5].toFixed(res),'\t', 
-   							e[ 9].toFixed(res),'\t',e[13].toFixed(res));
-   console.log(	e[ 2].toFixed(res),'\t',e[ 6].toFixed(res),'\t', 
-   							e[10].toFixed(res),'\t',e[14].toFixed(res));
-   console.log(	e[ 3].toFixed(res),'\t',e[ 7].toFixed(res),'\t', 
-   							e[11].toFixed(res),'\t',e[15].toFixed(res));
-   console.log('----------------------4x4 Matrix (end)----------------------\n');
-  }
-};
-/**
  * Constructor of Vector3
  * If opt_src is specified, new vector is initialized by opt_src.
  * @param opt_src source vector(option)
- * JT: aVec = new Vector3(); // Makes zero-valued Vector3
- *     aVec = new Vector3([5,6,7]); // sets aVec to 5,6,7 -- don't forget []!!
  */
 var Vector3 = function(opt_src) {
   var v = new Float32Array(3);
@@ -782,102 +714,17 @@ var Vector3 = function(opt_src) {
   */
 Vector3.prototype.normalize = function() {
   var v = this.elements;
-  // find the length of the vector:
   var c = v[0], d = v[1], e = v[2], g = Math.sqrt(c*c+d*d+e*e);
-  if(g){              // if given vector had non-zero length,
-    if(g == 1)        // AND that vector length is already 1.0,
-        return this;  // DO NOTHING. Keep current vector contents.
-   } else {           // ELSE we got an empty, undefined, or zero-length vector.
-     v[0] = 0; v[1] = 0; v[2] = 0;  // set its elements to zero-length, and
-     return this;     // return
+  if(g){
+    if(g == 1)
+        return this;
+   } else {
+     v[0] = 0; v[1] = 0; v[2] = 0;
+     return this;
    }
-   // Nope; we have valid vector--adjust its length to 1.0.
    g = 1/g;
    v[0] = c*g; v[1] = d*g; v[2] = e*g;
    return this;
-};
-
-Vector3.prototype.sub = function(opt_src) {
-  var vA = this.elements;
-  var ans = new Vector3([0.0, 0.0, 0.0]);
-  var vC = ans.elements;
-  if(opt_src && typeof opt_src === 'object' && opt_src.hasOwnProperty('elements')) {
-    var vB = opt_src.elements;
-  }
-  else {
-    console.log('ERROR! sub() funciton needs Vec3 argument');
-    return 0.0
-  }
-  vC[0] = vA[0] - vB[0];
-  vC[1] = vA[1] - vB[1];
-  vC[2] = vA[2] - vB[2];
-  return ans;
-};
-/** J. Tumblin 2018.02.13
-  * Returns the (scalar) dot-product of the two Vector3 objects
-  * As dot-products are commutative (order doesn't matter) then
-  * either of these statements will result in the same 'myDot' result:
-  *     myDot = aVec.dot(bVec);  // Dot product: a[0]*b[0] + a[1]*b[1] + a[2]*b[2] 
-  *     myDot = bVec.dot(aVec);
-  */   
-Vector3.prototype.dot = function(opt_src) {
-  var vA = this.elements; // short-hand for the calling object
-  if(opt_src && typeof opt_src === 'object' && opt_src.hasOwnProperty('elements')) {
-    var vB = opt_src.elements;  // short-hand for the Vector3 argument
-    }
-  else {
-    console.log('ERROR! dot() function needs Vec3 argument! \n');
-    return 0.0;
-  }
-  return vA[0]*vB[0] + vA[1]*vB[1] + vA[2]*vB[2];  // compute dot-product
-};
-
-/** J. Tumblin 2018.02.13
-  * Returns Vector3 cross-product of current object and argument 
-  * Careful! cross-products are NOT commutative! Ordering matters
-  *     cVec = aVec.cross(bVec);  // finds aVec x bVec
-  *     cVec = bVec.cross(aVec);   // finds bVec x aVec (== -aVec x bVec)
-  */
-Vector3.prototype.cross = function(opt_src) {
-  var vA = this.elements;   // short-hand for the calling object
-  var ans = new Vector3([0.0, 0.0, 0.0]);  // initialize to zero vector 
-  var vC = ans.elements;    // get the Float32Array contents of 'ans'
-  if(opt_src && typeof opt_src === 'object' && opt_src.hasOwnProperty('elements')) {
-    var vB = opt_src.elements;  // short-hand for the Vector3 argument
-    }
-  else {
-    console.log('ERROR! cross() function needs Vec3 argument! \n');
-    return ans;
-  }
-  // compute cross-product
-  vC[0] = vA[1]*vB[2] - vA[2]*vB[1];  // Cx = Ay*Bz - Az*By
-  vC[1] = vA[2]*vB[0] - vA[0]*vB[2];  // Cy = Az*Bx - Ax*Bz
-  vC[2] = vA[0]*vB[1] - vA[1]*vB[0];  // Cz = Ax*By - Ay*Bx
-  return ans; 
-};
-
-/** J. Tumblin 2018.02.01
-  * Print contents of Vector3 on console.
-  * If you write:  
-  *     var aVec3 = new Vector3([7,8,9]);
-  *     aVec3.printMe();   // prints--  Vector3: 7.00  8.00  9.00
-  *     aVec3.printMe('my aVec3');
-  *                        // prints-- my aVec3: 7.00  8.00  9.00
-  */
- Vector3.prototype.printMe = function(opt_src) {
- var res = 5;
-  if (opt_src && typeof opt_src === 'string') {
-     console.log(opt_src,':',
-      this.elements[ 0].toFixed(res),'\t', 
-      this.elements[ 1].toFixed(res),'\t', 
-      this.elements[ 2].toFixed(res),'\n');
-  } 
-  else {
-     console.log('Vector3:', 
-      this.elements[ 0].toFixed(res),'\t',
-      this.elements[ 1].toFixed(res),'\t', 
-      this.elements[ 2].toFixed(res),'\n');
-  }
 };
 
 /**
@@ -891,362 +738,4 @@ var Vector4 = function(opt_src) {
     v[0] = opt_src[0]; v[1] = opt_src[1]; v[2] = opt_src[2]; v[3] = opt_src[3];
   } 
   this.elements = v;
-}
-
-/** J. Tumblin 2018.02.13
-  * Returns the (scalar) dot-product of the two Vector4 objects
-  * As dot-products are commutative (order doesn't matter) then
-  * either of these statements will result in the same 'myDot' result:
-  *     myDot = aVec.dot(bVec);  // = a[0]*b[0] + a[1]*b[1] + a[2]*b[2] + a[3]*b[3] 
-  *     myDot = bVec.dot(aVec);
-  */   
-Vector4.prototype.dot = function(opt_src) {
-  var vA = this.elements; // short-hand for the calling object
-
-  if(opt_src && typeof opt_src === 'object' && opt_src.hasOwnProperty('elements')) {
-    var vB = opt_src.elements;  // short-hand for the Vector3 argument
-    }
-  else {
-    console.log('ERROR! dot() function needs Vec4 argument! \n');
-    return 0.0;
-  }
-  if(vA[3]*vB[3] !== 0) {
-    console.log('WARNING! Vector4.dot() given non-zero \'w\' values: NOT a geometric result!!'); 
-    }
-  return vA[0]*vB[0] + vA[1]*vB[1] + vA[2]*vB[2] + vA[3]*vB[3];  // compute dot-product
-};
-
-/** J. Tumblin 2018.02.13
-  * Returns Vector3 cross-product of current object and argument 
-  * Careful! cross-products are NOT commutative! Ordering matters
-  *     cVec = aVec.cross(bVec);  // finds aVec x bVec
-  *     cVec = bVec.cross(aVec);   // finds bVec x aVec (== -aVec x bVec)
-  */
-Vector4.prototype.cross = function(opt_src) {
-  var vA = this.elements;   // short-hand for the calling object
-  var ans = new Vector4([0.0, 0.0, 0.0, 0.0]); // initialize to zero vector
-  var vC = ans.elements;    // get the Float32Array contents of 'ans'
-  if(opt_src && typeof opt_src === 'object' && opt_src.hasOwnProperty('elements')) {
-    var vB = opt_src.elements;  // short-hand for the Vector4 argument
-    }
-  else {
-    console.log('ERROR! cross() function needs Vec4 argument! \n');
-    return ans;
-  }
-  if(vA[3] !== 0 || vB[3] !== 0) {
-    console.log('WARNING! cross() given non-zero \'w\' values: IGNORED!!!');
-    }
-  // compute cross-product
-  vC[0] = vA[1]*vB[2] - vA[2]*vB[1];  // Cx = Ay*Bz - Az*By
-  vC[1] = vA[2]*vB[0] - vA[0]*vB[2];  // Cy = Az*Bx - Ax*Bz
-  vC[2] = vA[0]*vB[1] - vA[1]*vB[0];  // Cz = Ax*By - Ay*Bx
-  vC[3] = 0.0;    // set w == 0 ALWAYS, because it's a vector result
-  return ans; 
-};
-
-/** J. Tumblin 2018.02.01
-  * Print contents of Vector4 on console.
-  * If you write:  
-  *     var bVec4 = new Vector4([7,8,9,1]);
-  *     bVec4.printMe();   // prints--  Vector4: 7.00  8.00  9.00  1.00
-  *     bVec4.printMe('bVec4--');
-  *                        // prints--  bVec4--: 7.00  8.00  9.00  1.00
-  */
-Vector4.prototype.printMe = function(opt_src) {
- var res = 5;
-  if (opt_src && typeof opt_src === 'string') { 
-     console.log(opt_src,':',     // print the string argument given.
-      this.elements[0].toFixed(res),'\t', 
-      this.elements[1].toFixed(res),'\t', 
-      this.elements[2].toFixed(res),'\t',
-      this.elements[3].toFixed(res),'\n');
-  } 
-  else {                    // user called printMe() with NO args, so...
-     console.log('Vector4:', 
-      this.elements[0].toFixed(res),'\t',
-      this.elements[1].toFixed(res),'\t', 
-      this.elements[2].toFixed(res),'\t',
-      this.elements[3].toFixed(res),'\n');
-  }
-};
-
-/**
- * Additions by Adrien Katsuya Tateno
- * January 28, 2014
- *
- * pushMatrix(myMat)  
- * Puts contents of 'myMat' matrix on top of a push-down stack
- * @param myMat the matrix to store
- *
- * myMat = popMatrix()
- * Removes the top matrix from a push-down stack
- * @return the matrix found at the top of the stack
- */
- var __cuon_matrix_mod_stack = [];
-function pushMatrix(mat) {
-  __cuon_matrix_mod_stack.push(new Matrix4(mat));
-}
-
-function popMatrix() {
-  return __cuon_matrix_mod_stack.pop();
-}
-
-/**====================QUATERNIONS===============================================
- * @author mikael emtinger / http://gomo.se/
- * @author alteredq / http://alteredqualia.com/   <<== INSPIRING! visit site!
- * Written for the THREE.js library
- *
- * 2014.02.12 Modified by Jack Tumblin, Northwestern Univ.
- * 						for use in EECS 351-1 "Intro to Computer Graphics" class
- *						along with textbook "WebGL Programming Guide" (2013, Matsuda)
- *						but without the THREE.js graphics library.
- *	-- DROPPED original 'setFromEuler()' function because it doesn't follow the 
- * 			generally-accepted definition of Euler angles as described by Wikipedia.
- *				
- */
-
-Quaternion = function( x, y, z, w ) {
-//--------------------------------------
-	this.set(
-		x || 0,
-		y || 0,
-		z || 0,
-		w !== undefined ? w : 1
-	);
-
-};
-
-Quaternion.prototype = {
-//--------------------------------------
-	constructor: Quaternion,
-	set: function ( x, y, z, w ) {
-					this.x = x;
-					this.y = y;
-					this.z = z;
-					this.w = w;
-		return this;
-	},
-
-  clear: function ( ) {
-//--------------------------------------
-	this.x = 0.0;
-	this.y = 0.0;
-	this.z = 0.0;
-	this.w = 1.0;
-	},
-	
-	copy: function ( q ) {
-//--------------------------------------
-		this.x = q.x;
-		this.y = q.y;
-		this.z = q.z;
-		this.w = q.w;
-		return this;
-	},
-	
-	printMe: function ( ) {
-//---------------------------------------
-// 2014.02:  J. Tumblin
-	res = 5;		// # of digits to print on HTML 'console'
-	console.log('Quaternion: x=', this.x.toFixed(res), 
-										    'i\ty=', this.y.toFixed(res), 
-												'j\tz=', this.z.toFixed(res), 
-									 'k\t(real)w=', this.w.toFixed(res),'\n');
-	},
-	
-	
-	setFromAxisAngle: function ( ax, ay, az, angleDeg) {
-//--------------------------------------
-// Good tutorial on rotations; code inspiration at:
-//http://www.euclideanspace.com/maths/geometry/rotation
-//                          /conversions/angleToQuaternion/index.htm
-// Be sure we have a normalized x,y,z 'axis' argument before we start:
-		var mag2 = ax*ax + ay*ay + az*az;	// axis length^2
-		if(mag2-1.0 > 0.0000001 || mag2-1.0 < -0.0000001) {
-			var normer = 1.0/Math.sqrt(mag2);
-			ax *= normer;
-			ay *= normer;
-			az *= normer;
-		}
-
-		var halfAngle = angleDeg * Math.PI / 360.0;	// (angleDeg/2) * (2*pi/360)
-		var s = Math.sin( halfAngle );
-		this.x = ax * s;
-		this.y = ay * s;
-		this.z = az * s;
-		this.w = Math.cos( halfAngle );
-		return this;
-	},
-	
-	setFromEuler: function ( alphaDeg, betaDeg, gammaDeg ) {
-//--------------------------------------
-// (Original function used non-standard definitions).
-// Euler angles: http://en.wikipedia.org/wiki/Euler_angles
-// rotate your 'current drawing axes' in 3 steps:
-// 1) rotate around z-axis by angle alpha 
-//			(makes a new, 2nd set of x,y,z axes to use for
-//			drawing vertices. From these, we take the next step:) 
-// 2) rotate around x-axis by angle beta
-//			(makes a new, 3rd set of x,y,z axes to use for
-//			drawing vertices.  From these, we take the next step:)
-// 3) rotate around z-axis (again!) by angle gamma.
-//			(makes a final, 4th set of x,y,z axes to use for 
-// 			drawing vertices.  These axes are our final result. 
-//
-// accepts rotations in DEGREES
-
-		console.log('NOT WRITTEN YET.  WRITE YOUR OWN.'); 
-
-		this.w = 1;
-	  this.x = 0;
-		this.y = 0;
-		this.z = 0;
-		return this;
-	},
-
-	setFromRotationMatrix: function ( m ) {
-//--------------------------------------
-// Adapted from: http://www.euclideanspace.com/maths/geometry/rotations/conversions/matrixToQuaternion/index.htm
-
-		function copySign(a, b) {
-			return b < 0 ? -Math.abs(a) : Math.abs(a);
-		}
-		var absQ = Math.pow(m.determinant(), 1.0 / 3.0);
-		this.w = Math.sqrt( Math.max( 0, absQ + m.n11 + m.n22 + m.n33 ) ) / 2;
-		this.x = Math.sqrt( Math.max( 0, absQ + m.n11 - m.n22 - m.n33 ) ) / 2;
-		this.y = Math.sqrt( Math.max( 0, absQ - m.n11 + m.n22 - m.n33 ) ) / 2;
-		this.z = Math.sqrt( Math.max( 0, absQ - m.n11 - m.n22 + m.n33 ) ) / 2;
-		this.x = copySign( this.x, ( m.n32 - m.n23 ) );
-		this.y = copySign( this.y, ( m.n13 - m.n31 ) );
-		this.z = copySign( this.z, ( m.n21 - m.n12 ) );
-		this.normalize();
-		return this;
-	},
-
-	calculateW : function () {
-//--------------------------------------
-		this.w = - Math.sqrt( Math.abs( 
-		             1.0 - this.x * this.x - this.y * this.y - this.z * this.z ) );
-		return this;
-	},
-
-	inverse: function () {
-//--------------------------------------
-		this.x *= -1;
-		this.y *= -1;
-		this.z *= -1;
-		return this;
-	},
-
-	length: function () {
-//--------------------------------------\
-		return Math.sqrt( this.x * this.x + this.y * this.y + this.z * this.z + this.w * this.w );
-	},
-
-	normalize: function () {
-//--------------------------------------
-		var len = Math.sqrt(this.x * this.x + 
-												this.y * this.y + 
-												this.z * this.z + 
-												this.w * this.w );
-		if ( len === 0 ) {
-			this.x = 0;
-			this.y = 0;
-			this.z = 0;
-			this.w = 0;
-		} 
-		else {
-			len = 1 / len;
-			this.x = this.x * len;
-			this.y = this.y * len;
-			this.z = this.z * len;
-			this.w = this.w * len;
-		}
-		return this;
-	},
-
-	multiplySelf: function ( quat2 ) {
-//--------------------------------------
-		var qax = this.x,  qay = this.y,  qaz = this.z,  qaw = this.w,
-		    qbx = quat2.x, qby = quat2.y, qbz = quat2.z, qbw = quat2.w;
-
-		this.x = qax * qbw + qaw * qbx + qay * qbz - qaz * qby;
-		this.y = qay * qbw + qaw * qby + qaz * qbx - qax * qbz;
-		this.z = qaz * qbw + qaw * qbz + qax * qby - qay * qbx;
-		this.w = qaw * qbw - qax * qbx - qay * qby - qaz * qbz;
-		return this;
-	},
-
-	multiply: function ( q1, q2 ) {
-//--------------------------------------
-// from http://www.euclideanspace.com/maths/algebra/realNormedAlgebra/quaternions/code/index.htm
-		this.x =  q1.x * q2.w + q1.y * q2.z - q1.z * q2.y + q1.w * q2.x;
-		this.y = -q1.x * q2.z + q1.y * q2.w + q1.z * q2.x + q1.w * q2.y;
-		this.z =  q1.x * q2.y - q1.y * q2.x + q1.z * q2.w + q1.w * q2.z;
-		this.w = -q1.x * q2.x - q1.y * q2.y - q1.z * q2.z + q1.w * q2.w;
-		return this;
-
-	},
-
-	multiplyVector3: function ( vec, dest ) {
-//--------------------------------------
-		if( !dest ) { dest = vec; }
-		var x    = vec.x,  y  = vec.y,  z  = vec.z,
-			 qx   = this.x, qy = this.y, qz = this.z, qw = this.w;
-			 
-		// calculate quat * vec:
-		var ix =  qw * x + qy * z - qz * y,
-				iy =  qw * y + qz * x - qx * z,
-				iz =  qw * z + qx * y - qy * x,
-				iw = -qx * x - qy * y - qz * z;
-		// calculate result * inverse quat:
-		dest.x = ix * qw + iw * -qx + iy * -qz - iz * -qy;
-		dest.y = iy * qw + iw * -qy + iz * -qx - ix * -qz;
-		dest.z = iz * qw + iw * -qz + ix * -qy - iy * -qx;
-		return dest;
-	}
-}
-
-Quaternion.slerp = function ( qa, qb, qm, t ) {
-//--------------------------------------
-// http://www.euclideanspace.com/maths/algebra/realNormedAlgebra/quaternions/slerp/
-
-	var cosHalfTheta = qa.w * qb.w + qa.x * qb.x + qa.y * qb.y + qa.z * qb.z;
-
-	if (cosHalfTheta < 0) {
-		qm.w = -qb.w; 
-		qm.x = -qb.x; 
-		qm.y = -qb.y; 
-		qm.z = -qb.z;
-		cosHalfTheta = -cosHalfTheta;
-	} 
-	else {	qm.copy(qb);	}
-
-	if ( Math.abs( cosHalfTheta ) >= 1.0 ) {
-		qm.w = qa.w; 
-		qm.x = qa.x; 
-		qm.y = qa.y; 
-		qm.z = qa.z;
-		return qm;
-	}
-
-	var halfTheta = Math.acos( cosHalfTheta ),
-	sinHalfTheta = Math.sqrt( 1.0 - cosHalfTheta * cosHalfTheta );
-
-	if ( Math.abs( sinHalfTheta ) < 0.0001 ) {
-		qm.w = 0.5 * ( qa.w + qb.w );
-		qm.x = 0.5 * ( qa.x + qb.x );
-		qm.y = 0.5 * ( qa.y + qb.y );
-		qm.z = 0.5 * ( qa.z + qb.z );
-		return qm;
-	}
-
-	var ratioA = Math.sin( ( 1 - t ) * halfTheta ) / sinHalfTheta,
-	ratioB = Math.sin( t * halfTheta ) / sinHalfTheta;
-
-	qm.w = ( qa.w * ratioA + qm.w * ratioB );
-	qm.x = ( qa.x * ratioA + qm.x * ratioB );
-	qm.y = ( qa.y * ratioA + qm.y * ratioB );
-	qm.z = ( qa.z * ratioA + qm.z * ratioB );
-	return qm;
 }
