@@ -1577,9 +1577,9 @@ VBObox2.prototype.init = function() {
 
     // c2) Find All Uniforms:-----------------------------------------------------
     //Get GPU storage location for each uniform var used in our shader programs: 
+    this.u_ModelMatrixLoc = gl.getUniformLocation(this.shaderLoc, 'u_ModelMatrix');
     this.u_eyePosLoc = gl.getUniformLocation(this.shaderLoc, 'u_eyePos');
     this.u_MvpMatrixLoc = gl.getUniformLocation(this.shaderLoc, 'u_MvpMatrix');
-    this.u_ModelMatrixLoc = gl.getUniformLocation(this.shaderLoc, 'u_ModelMatrix');
     this.u_NormalMatrixLoc = gl.getUniformLocation(this.shaderLoc, 'u_NormalMatrix');
     this.u_isBlinnLoc = gl.getUniformLocation(this.shaderLoc, 'u_check');
 
@@ -1720,7 +1720,7 @@ VBObox2.prototype.adjust = function() {
     gl.uniformMatrix4fv(this.u_NormalMatrixLoc, false, this.NormalMatrix.elements);
     gl.uniformMatrix4fv(this.u_MvpMatrixLoc, false, this.MvpMatrix.elements);
     gl.drawArrays(gl.TRIANGLE_STRIP, sphStart / floatsPerVertex, sphVerts.length / floatsPerVertex);
-    
+
     // 1
     this.ModelMatrix.setIdentity();
     this.MvpMatrix.setIdentity();
